@@ -126,6 +126,16 @@
                     <input type="number" id="enemy_reduce" name="enemy_reduce" value="0">
                 </div>
             </div>
+            <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                <div>
+                    <label for="attack_speed">攻速</label>
+                    <input type="number" id="attack_speed" name="attack_speed" value="0" step="any">
+                </div>
+                <div>
+                    <label for="redeploy_time">再部署时间</label>
+                    <input type="number" id="redeploy_time" name="redeploy_time" value="0" step="any">
+                </div>
+            </div>
             <div class="form-group">
                 <label for="skill">技能选择</label>
                 <select id="skill" name="skill">
@@ -159,6 +169,8 @@
             const enemy_armor = parseFloat(document.getElementById('enemy_armor').value) || 0;
             const enemy_resist = parseFloat(document.getElementById('enemy_resist').value) || 0;
             const enemy_reduce = parseFloat(document.getElementById('enemy_reduce').value) || 0;
+            const attack_speed = parseFloat(document.getElementById('attack_speed').value) || 0;
+            const redeploy_time = parseFloat(document.getElementById('redeploy_time').value) || 0;
 
             const is_j1 = document.getElementById('j1').checked;
             const skill_selected = document.getElementById('skill').value;
