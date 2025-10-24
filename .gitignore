@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+
+# PyInstaller artifacts
+build/
+dist/
+*.spec
+
+# VS Code
+.vscode/
