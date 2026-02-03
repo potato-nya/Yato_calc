@@ -317,12 +317,20 @@
 
             // 时间轴参考（右侧）
             let timelineText = [];
-            if (skill_selected === "一技能") {
-                // 周期：再部署 + 21 秒
-                const cycle = (redeploy_time || 0) + 21.0;
-                timelineText.push(`技能周期：${cycle.toFixed(2)} 秒`);
+            // 分页标记点 ID 列表 (用于快捷翻页)
+            let pageIds = []; 
+            // 每次生成结果前，先清空之前的内容（如果需要的话，但这里是重新生成字符串）
 
-                // 计算一技能时间轴（21s=630帧窗口）
+            if (skill_selected === "一技能") {
+                timelineText.push(`<span id="page-0" class="page-marker">提示：使用 PgUp/PgDn 或 [ / ] 键翻页</span>`);
+                timelineText.push("=".repeat(40));
+                pageIds.push("page-0");
+
+                // 周期：再部署 + 21 秒
+                const cycleSec = (redeploy_time || 0) + 21.0;
+                timelineText.push(`技能周期：${cycleSec.toFixed(2)} 秒`);
+
+                // 计算一技能时间轴（630帧窗口）
                 const tl = computeSkill1Timeline(attack_speed, is_j1, landing_attack_speed, 630);
                 if ('n' in tl) {
                     timelineText.push(`实际攻速 n = ${tl.n}`);
@@ -339,7 +347,8 @@
                     timelineText.push(`${JSON.stringify(tl.cycle_intervals_post)}`);
                 }
                 timelineText.push("-".repeat(20));
-                // 仅显示偶数次（每对第二次），一行一个值，格式为 x秒y帧，并在首次 >=270 帧位置插入 9秒分界线
+                
+                // 单次技能轴显示
                 let insertedSplit = false;
                 for (let i = 1; i < tl.times.length; i += 2) {
                     const tframe = tl.times[i];
@@ -353,28 +362,37 @@
                     timelineText.push(`第${String(hitNo).padStart(2,'0')}次: ${sec}秒${rem}帧`);
                 }
 
-                // 多次技能（累计至1000次）：每次内部与第一次一致；只列偶数次，但序号为实际累计次数
+                // 多次技能（累计至1000次）
                 timelineText.push("");
                 timelineText.push("—— 多次技能（累计至1000次）——");
-                timelineText.push(`周期：${cycle.toFixed(2)} 秒；起点：1秒`);
+                timelineText.push(`周期：${cycleSec.toFixed(2)} 秒；\n每次技能起始偏移已含在单次轴(32帧)中`);
+                
                 const perSkillHits = tl.times.length;
                 if (perSkillHits === 0) {
                     timelineText.push("（无可用命中点）");
                 } else {
                     let skillIndex = 1;
                     while ((skillIndex - 1) * perSkillHits < 1000) {
-                        const startSec = 1.0 + (skillIndex - 1) * cycle;
-                        timelineText.push(`—— 第${skillIndex}次技能（起点：${startSec.toFixed(2)}秒） ——`);
-                        const baseOffsetFrames = Math.round(startSec * 30);
+                        const skillStartSec = (skillIndex - 1) * cycleSec;
+                        
+                        // 插入锚点
+                        const pId = `page-${skillIndex}`;
+                        pageIds.push(pId);
+                        timelineText.push(`<span id="${pId}" class="page-marker">—— 第${skillIndex}次技能（基准起点：${skillStartSec.toFixed(2)}秒） ——</span>`);
+                        
                         for (let j = 2; j <= perSkillHits; j += 2) {
                             const labelCount = (skillIndex - 1) * perSkillHits + j;
                             if (labelCount > 1000) break;
-                            const tframe = tl.times[j - 1];
-                            const totalFrames = baseOffsetFrames + tframe;
+                            
+                            const tframe = tl.times[j - 1]; // 相对帧 (含32帧起步)
+                            const baseFrames = skillStartSec * 30;
+                            const totalFrames = Math.round(baseFrames + tframe);
+                            
                             const sec = Math.floor(totalFrames / 30);
                             const rem = totalFrames % 30;
                             timelineText.push(`第${String(labelCount).padStart(4,'0')}次: ${sec}秒${rem}帧`);
                         }
+                        
                         if (skillIndex * perSkillHits < 1000) {
                             timelineText.push("—— 分页 ——\n");
                         }
@@ -384,6 +402,18 @@
             } else if (skill_selected === "二技能") {
                 const cycle = (redeploy_time || 0) + 4.0;
                 timelineText.push(`技能周期：${cycle.toFixed(2)} 秒`);
+                timelineText.push("=".repeat(35));
+                timelineText.push("二技能出伤帧 (自部署起点)");
+                timelineText.push("注:每段可能独立随机+1帧");
+                timelineText.push("-".repeat(35));
+                
+                const baseFrames = [43, 63, 65, 73, 81, 89, 91, 97, 99, 110, 112, 114, 115, 117, 118, 120];
+                baseFrames.forEach((f, i) => {
+                    const sec = Math.floor(f / 30);
+                    const rem = f % 30;
+                    timelineText.push(`第${String(i+1).padStart(2,'0')}段: ${sec}秒${String(rem).padStart(2,'0')}帧`);
+                });
+
             } else {
                 // 三技能：逐帧覆盖与每格命中
                 const { frameRanges, cellHits } = computeSkill3Timing();
@@ -414,7 +444,64 @@
             }
 
             document.getElementById('result').innerHTML = resultHTML;
-            document.getElementById('timeline').innerHTML = `<pre>${timelineText.join('\n')}</pre>`;
+            const timelineDiv = document.getElementById('timeline');
+            timelineDiv.innerHTML = `<pre>${timelineText.join('\n')}</pre>`;
+
+            // 快捷翻页功能绑定 (仅一技能)
+            if (skill_selected === "一技能" && pageIds.length > 0) {
+                // 将页面索引存储在 timelineDiv 上，防止重复绑定导致状态错乱
+                timelineDiv.dataset.pageIds = JSON.stringify(pageIds);
+                timelineDiv.dataset.currPageIdx = "0";
+
+                // 确保焦点以便接收键盘事件（如果需要的话，但通常我们绑定在document上）
+                // 这里我们绑定在 document 上，但只在 timeline 面板可见时生效
+                // 为了简单起见，我们定义一个全局处理函数，每次计算 update 
+                
+                // 移除旧的 listener (如果有)
+                if (window._timelineKeyHandler) {
+                    document.removeEventListener('keydown', window._timelineKeyHandler);
+                }
+
+                window._timelineKeyHandler = (e) => {
+                    // 仅当时间轴可见时生效
+                    if (document.getElementById('panel-right').classList.contains('hidden')) return;
+                    
+                    const pIds = JSON.parse(timelineDiv.dataset.pageIds || '[]');
+                    let currIdx = parseInt(timelineDiv.dataset.currPageIdx || "0");
+                    
+                    let targetIdx = -1;
+                    if (e.key === "PageDown" || e.key === "]") {
+                        e.preventDefault();
+                        targetIdx = currIdx + 1;
+                    } else if (e.key === "PageUp" || e.key === "[") {
+                        e.preventDefault();
+                        targetIdx = currIdx - 1;
+                    }
+
+                    if (targetIdx >= 0 && targetIdx < pIds.length) {
+                        const targetId = pIds[targetIdx];
+                        const el = document.getElementById(targetId);
+                        if (el) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            // 高亮一下?
+                            timelineDiv.dataset.currPageIdx = targetIdx.toString();
+                        }
+                    }
+                };
+                document.addEventListener('keydown', window._timelineKeyHandler);
+                
+                // 自动跳到第一页
+                setTimeout(() => {
+                    const el = document.getElementById(pageIds[0]);
+                    if (el) el.scrollIntoView({ behavior: 'auto', block: 'start' });
+                }, 100);
+            } else {
+                // 非一技能，移除监听
+                if (window._timelineKeyHandler) {
+                    document.removeEventListener('keydown', window._timelineKeyHandler);
+                    window._timelineKeyHandler = null;
+                }
+            }
         }
 
         // 视图切换：both/left/right
@@ -441,40 +528,98 @@
         // JS版本的一技能时间轴（含9秒/11秒分段与封顶）
         function computeSkill1Timeline(rawAttackSpeed, isJ1, landingAS = 0, maxFrames = 600) {
             const base = isJ1 ? 170 : 200;
-            let n2 = rawAttackSpeed + base; // 后11秒
-            n2 = Math.min(600, Math.max(1, n2));
-            let n1 = rawAttackSpeed + landingAS + base; // 前9秒
-            n1 = Math.min(600, Math.max(1, n1));
-            const B = [28, 26, 8, 18, 32];
-            const useTwo = Math.abs(landingAS) > 0;
-            const preN = useTwo ? n1 : n2;
-            const pre = Math.ceil(Math.min(7, 1400 / preN));
+            // 辅助四舍五入 (x.5 向上)
+            const roundHalfUp = (n) => Math.floor(n + 0.5);
 
-            const times = [];
-            let t = pre;
-            if (t <= maxFrames) times.push(t);
-            if (t <= maxFrames) times.push(t);
-            let j = 0;
-            while (true) {
-                const nUse = (useTwo && t < 270) ? n1 : n2;
-                const delta = Math.ceil(B[j % 5] * (100.0 / nUse));
-                t = t + delta;
-                if (t > maxFrames) break;
-                times.push(t);
-                if (t > maxFrames) break;
-                times.push(t);
-                j += 1;
+            let n2 = rawAttackSpeed + base;
+            n2 = Math.min(600, Math.max(1, n2));
+            
+            let n1 = rawAttackSpeed + landingAS + base;
+            n1 = Math.min(600, Math.max(1, n1));
+            
+            const useTwoPhase = Math.abs(landingAS) > 0.0;
+
+            // 14帧段时长计算
+            const calcDur14 = (currN) => {
+                const f = 14 * 200 / currN;
+                const r = roundHalfUp(f);
+                const c = Math.ceil(f);
+                if (r < c) return c + 1;
+                return r;
+            };
+
+            // 简单14帧段时长 (用于4+2组合)
+            const calcDur14Simple = (currN) => {
+                const f = 14 * 200 / currN;
+                return roundHalfUp(f);
             }
-            const cycleIntervals = (n) => B.map(b => Math.ceil(b * (100.0 / n)));
-            const result = { pre, times };
-            if (useTwo) {
-                result.n1 = n1; result.n2 = n2;
-                result.cycle_intervals_pre = cycleIntervals(n1);
-                result.cycle_intervals_post = cycleIntervals(n2);
+
+            // 初始时间：第32帧为动画第一帧，设为31
+            let t = 31;
+            const times = [];
+
+            while (t <= maxFrames) {
+                // 3个片段: Seg1(14), Seg2(14), Seg3(28 aka 14*2)
+                for (let segIdx = 0; segIdx < 3; segIdx++) {
+                    const currN = (useTwoPhase && t < 270) ? n1 : n2;
+
+                    if (segIdx === 0 || segIdx === 1) {
+                        // 14帧基准
+                        const dur = calcDur14(currN);
+                        // 出伤点: (dur+1)//2
+                        const hitOffset = Math.floor((dur + 1) / 2);
+                        const hitTime = t + hitOffset;
+                        if (hitTime > maxFrames) break; 
+                        times.push(hitTime); // 1st hit
+                        times.push(hitTime); // 2nd hit
+                        
+                        t += dur;
+                    } else {
+                        // Seg3: 4+2 组合 (两个14帧基准段合成)
+                        const dBase = calcDur14Simple(currN);
+                        
+                        // 3次出伤判定 (每次双连击)
+                        const off1 = roundHalfUp(dBase * 6 / 14);
+                        const off2 = roundHalfUp(dBase * 10 / 14);
+                        const off3 = dBase + roundHalfUp(dBase * 5 / 14);
+                        const offsets = [off1, off2, off3];
+
+                        for (let off of offsets) {
+                            const hitTime = t + off;
+                            if (hitTime > maxFrames) break;
+                            times.push(hitTime);
+                            times.push(hitTime);
+                        }
+
+                        t += (2 * dBase);
+                    }
+                    if (t > maxFrames) break;
+                }
+                if (t > maxFrames) break;
+            }
+
+            // 为了UI显示“攻击间隔”，造一个示例列表
+            const sampleN = useTwoPhase ? n1 : n2;
+            const d1 = calcDur14(sampleN);
+            const d2 = calcDur14(sampleN);
+            const d3 = 2 * calcDur14Simple(sampleN);
+            const intervalsDisplay = [d1, d2, d3];
+
+            const result = { pre: 31, times: times };
+
+            if (useTwoPhase) {
+                const d1Post = calcDur14(n2);
+                const d3Post = 2 * calcDur14Simple(n2);
+                const intervalsPost = [d1Post, d1Post, d3Post];
+                result.n1 = n1;
+                result.n2 = n2;
+                result.cycle_intervals_pre = intervalsDisplay;
+                result.cycle_intervals_post = intervalsPost;
             } else {
                 result.n = n2;
-                result.cycle_intervals = cycleIntervals(n2);
+                result.cycle_intervals = intervalsDisplay;
             }
+            
             return result;
         }
 
