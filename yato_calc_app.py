@@ -221,82 +221,159 @@ def _timeline_prev_page(event=None):
     _timeline_goto_block(prev_idx)
     return "break"
 
-# 绑定 PageUp/PageDown 键在时间轴文本上翻页
+# 绑定 PageUp/PageDown 或 [] 键在时间轴文本上翻页
 timeline_text.bind("<Next>", _timeline_next_page)   # PageDown
 timeline_text.bind("<Prior>", _timeline_prev_page)  # PageUp
+timeline_text.bind("<bracketright>", _timeline_next_page) # ] 键
+timeline_text.bind("<bracketleft>", _timeline_prev_page)  # [ 键
 
 # 计算一技能出伤时间轴（基于攻速）
 def compute_skill1_timeline(raw_attack_speed: float, is_j1: bool, landing_as: float = 0.0, max_frames: int = 600):
     """
-    计算一技能命中时间轴，支持“落地攻速”在前9秒（含前摇）生效：
-    - 前9秒（<=270帧）使用 n1 = base + raw + landing_as
-    - 9秒后（后11秒）使用 n2 = base + raw
-    - 若某个间隔起点 t < 270 且 t+delta > 270，仍按 n1 计算该次间隔；下一次间隔再切换到 n2
-    - 任意情况下攻速不超过 600，且不小于 1
+    计算一技能命中时间轴，基于新的三段式动画理论（14+14+28）：
+    - 基础结构：5段二连击分为 14帧(1st) + 14帧(2nd) + 28帧(3rd,4th,5th) 三个动画片段
+    - 时长判定：
+        - 14帧段: 设计算值f, 若 Round(f) < Ceil(f) 则时长=Ceil(f)+1，否则 Round(f)
+        - 28帧段: 直接取两段 Round(f) 相加
+    - 出伤帧判定：
+        - 14帧段: 取中间帧 (d+1)//2 (奇数取中，偶数下取整)
+        - 28帧段: 按基准 [6, 10, 5] 比例缩放
+    - 攻速机制：
+        - 前9秒（<=270帧）使用 n1 = base + raw + landing_as
+        - 9秒后（后11秒）使用 n2 = base + raw
     """
     base = 170 if is_j1 else 200
-    # 后11秒及默认的攻速
+    
+    # 辅助简单的四舍五入函数 (x.5 向上取整)
+    def round_half_up(n):
+        return int(n + 0.5)
+
+    # 确定攻速数值
     n2 = raw_attack_speed + base
-    if n2 > 600:
-        n2 = 600
-    if n2 <= 0:
-        n2 = 1
-    # 前9秒攻速（含落地攻速）
+    n2 = max(1, min(600, n2))
+    
     n1 = raw_attack_speed + landing_as + base
-    if n1 > 600:
-        n1 = 600
-    if n1 <= 0:
-        n1 = 1
-
-    B = [28, 26, 8, 18, 32]
-
-    def cycle_intervals(n: float):
-        scale = 100.0 / n
-        return [math.ceil(b * scale) for b in B]
-
+    n1 = max(1, min(600, n1))
+    
     use_two_phase = abs(landing_as) > 0.0
-    # 前摇按当前阶段攻速计算（若两段，则用前9秒的 n1）
-    pre_n = n1 if use_two_phase else n2
-    pre = math.ceil(min(7, 1400 / pre_n))
 
+    # 14帧段的时长计算
+    def calc_dur_14(curr_n):
+        f = 14 * 200 / curr_n
+        r = round_half_up(f)
+        c = math.ceil(f)
+        if r < c:
+            return c + 1
+        return r
+
+    # 28帧段的时长计算（实际上是两个14帧段的合成，不需要特殊比较）
+    def calc_dur_14_simple(curr_n):
+        f = 14 * 200 / curr_n
+        return round_half_up(f)
+
+    # 初始时间：第32帧为动画第一帧，故此时设为31
+    t = 31
     times = []
-    t = pre
-    # 第 1、2 次在同一帧
-    if t <= max_frames:
-        times.append(t)
-    if t <= max_frames:
-        times.append(t)
-
-    j = 0
-    while True:
-        # 阶段切换判断基于间隔起点 t（9秒=270帧）
-        n_use = n1 if use_two_phase and t < 270 else n2
-        delta = math.ceil(B[j % 5] * (100.0 / n_use))
-        t = t + delta
+    
+    # 循环生成
+    # 每次大循环包含 3 个片段 (Seg1, Seg2, Seg3)
+    # Seg1 -> 1次双连击
+    # Seg2 -> 1次双连击
+    # Seg3 -> 3次双连击 (4+2)
+    
+    while t <= max_frames:
+        for segment_idx in range(3):
+            # 判断当前攻速
+            curr_n = n1 if (use_two_phase and t < 270) else n2
+            
+            if segment_idx == 0 or segment_idx == 1:
+                # 14帧基准段 (Seg1, Seg2)
+                # 使用复杂的四舍五入 vs Ceil 比较逻辑
+                dur = calc_dur_14(curr_n)
+                # 出伤点：奇数取中，偶数下取整 -> (dur + 1) // 2
+                hit_offset = (dur + 1) // 2
+                
+                hit_time = t + hit_offset
+                if hit_time > max_frames:
+                    break
+                times.append(hit_time) # 第1击
+                times.append(hit_time) # 第2击
+                
+                # 推进时间
+                t += dur
+                
+            else:
+                # Seg3: 4+2 组合。
+                # 理论上由两个 14帧基准段组成，但不进行复杂比较，直接四舍五入。
+                # 结构：[段1(4连击)] + [段2(2连击)]
+                # 总时长 = 2 * d_base
+                d_base = calc_dur_14_simple(curr_n)
+                
+                # 3次出伤判定 (每次双连击)
+                # 1. 段1内，6/14 处
+                # 2. 段1内，10/14 处
+                # 3. 段2内，5/14 处 (总偏移 = d_base + 5/14 * d_base)
+                
+                off1 = round_half_up(d_base * 6 / 14)
+                off2 = round_half_up(d_base * 10 / 14)
+                off3 = d_base + round_half_up(d_base * 5 / 14)
+                
+                current_offsets = [off1, off2, off3]
+                
+                for off in current_offsets:
+                    hit_time = t + off
+                    if hit_time > max_frames:
+                        break
+                    times.append(hit_time) # 第1击
+                    times.append(hit_time) # 第2击
+                
+                # 推进时间 (2倍时长)
+                t += (2 * d_base)
+            
+            if t > max_frames:
+                break
+        
         if t > max_frames:
             break
-        times.append(t)
-        if t > max_frames:
-            break
-        times.append(t)
-        j += 1
 
+    # 构造返回结果，兼容原有UI显示格式
+    # 原UI是用 'n' 或 'n1'/'n2' 来显示攻速信息
     result = {
-        'pre': pre,
+        'pre': 31, # 前摇/空闲帧
         'times': times,
     }
+    
+    # 为了UI显示“攻击间隔”，我们计算当前攻速下的各段时长供参考
+    # 这里仅计算第一轮的间隔作为展示，不再返回完整的周期列表
+    sample_n = n1 if use_two_phase else n2
+    d1 = calc_dur_14(sample_n)
+    d2 = calc_dur_14(sample_n) # 目前逻辑d1==d2
+    # d3 显示为单一数值可能不再准确，因为它是 2*d_simple
+    # 但为了UI兼容，我们显示总长
+    d3 = 2 * calc_dur_14_simple(sample_n)
+    
+    # UI期望一个列表格式，我们造一个示例列表 [Seg1, Seg2, Seg3]
+    intervals_display = [d1, d2, d3]
+
     if use_two_phase:
+        # 如果双阶段，分别计算后阶段的
+        d1_post = calc_dur_14(n2)
+        # d3_post
+        d3_post = 2 * calc_dur_14_simple(n2)
+        intervals_post = [d1_post, d1_post, d3_post]
+        
         result.update({
             'n1': n1,
             'n2': n2,
-            'cycle_intervals_pre': cycle_intervals(n1),
-            'cycle_intervals_post': cycle_intervals(n2),
+            'cycle_intervals_pre': intervals_display, # 前9秒参考
+            'cycle_intervals_post': intervals_post,   # 后11秒参考
         })
     else:
         result.update({
             'n': n2,
-            'cycle_intervals': cycle_intervals(n2),
+            'cycle_intervals': intervals_display,
         })
+        
     return result
 
 # 三技能：逐帧覆盖范围与每格命中帧清单（基于几何判定）
@@ -494,13 +571,26 @@ def calculate_attack(*args):
         # 更新右侧“时间轴参考”视图
         timeline_text.config(state=tk.NORMAL)
         timeline_text.delete(1.0, tk.END)
+        
+        # 重置分页索引
+        global skill_block_indices, current_skill_block
+        skill_block_indices = []
+        current_skill_block = -1
+
         if skill_selected == "一技能":
+            # 插入顶部操作提示
+            timeline_text.insert(tk.END, "使用 PgUp/PgDn 或 [ / ] 键翻页\n", "highlight")
+            timeline_text.insert(tk.END, "=" * 30 + "\n")
+            
+            # 记录顶部作为第一页（概览页）
+            skill_block_indices.append("1.0")
+
             # 技能周期：再部署时间 + 21 秒
             try:
-                cycle = float(entries['redeploy_time'].get()) + 21.0
+                cycle_sec = float(entries['redeploy_time'].get()) + 21.0
             except Exception:
-                cycle = 21.0
-            timeline_text.insert(tk.END, f"技能周期：{cycle:.2f} 秒\n")
+                cycle_sec = 21.0
+            timeline_text.insert(tk.END, f"技能周期：{cycle_sec:.2f} 秒\n")
             try:
                 raw_as = float(entries['attack_speed'].get())
             except Exception:
@@ -521,10 +611,10 @@ def calculate_attack(*args):
                 )
             else:
                 header = (
-                    f"实际攻速 n(前9秒) = {tl['n1']}\n"
+                    f"实际攻速 n(前10秒) = {tl['n1']}\n"
                     f"实际攻速 n(后11秒) = {tl['n2']}\n"
                     f"前摇 = {tl['pre']} 帧\n"
-                    f"攻击间隔(帧, 前9秒) = \n{tl['cycle_intervals_pre']}\n"
+                    f"攻击间隔(帧, 前10秒) = \n{tl['cycle_intervals_pre']}\n"
                     f"攻击间隔(帧, 后11秒) = \n{tl['cycle_intervals_post']}\n"
                     + "-" * 20 + "\n"
                 )
@@ -534,11 +624,11 @@ def calculate_attack(*args):
             inserted_split_marker = False
             for i in range(1, len(times), 2):
                 tframe = times[i]
-                # 若启用落地攻速，两段攻速分隔处加入 9 秒提示线
+                # 若启用落地攻速，两段攻速分隔处加入 10 秒提示线
                 if not inserted_split_marker:
                     try:
-                        if abs(landing_as) > 0.0 and tframe >= 270:
-                            timeline_text.insert(tk.END, "———— 9秒 ————\n")
+                        if abs(landing_as) > 0.0 and tframe >= 300:
+                            timeline_text.insert(tk.END, "———— 10秒 ————\n")
                             inserted_split_marker = True
                     except Exception:
                         pass
@@ -549,58 +639,76 @@ def calculate_attack(*args):
                 timeline_text.insert(tk.END, line + "\n")
 
             # 多次技能累计（至1000次）：每次技能的内部时间轴与第一次一致；
-            # 显示为 1s + 周期*(技能次数-1) + 当前技能内时间（只取偶数次/第二击）
             try:
-                cycle = float(entries['redeploy_time'].get()) + 21.0
+                # 技能周期基准：再部署时间 + 21 秒
+                cycle_sec = float(entries['redeploy_time'].get()) + 21.0
             except Exception:
-                cycle = 21.0
-            # 单次技能内总命中次数（含奇偶）
+                cycle_sec = 21.0
+            
             per_skill_hits = len(times)
             # 仅偶数次（每对第二次）
             timeline_text.insert(tk.END, "\n—— 多次技能（累计至1000次）——\n")
-            timeline_text.insert(tk.END, f"周期：{cycle:.2f} 秒；起点：1秒\n")
-            # 分页索引重置
-            global skill_block_indices, current_skill_block
-            skill_block_indices = []
-            current_skill_block = -1
+            timeline_text.insert(tk.END, f"周期：{cycle_sec:.2f} 秒；\n每次技能起始偏移已含在单次轴(32帧)中\n")
+            
             if per_skill_hits == 0:
                 timeline_text.insert(tk.END, "（无可用命中点）\n")
             else:
                 skill_index = 1  # 技能次数，从1开始
-                # 循环直到实际累计次数达到1000（注意：只显示偶数次，但累计按实际每一击计数）
                 while (skill_index - 1) * per_skill_hits < 1000:
-                    start_sec = 1.0 + (skill_index - 1) * cycle
+                    # 每次技能的基准时刻（秒）
+                    skill_start_sec = (skill_index - 1) * cycle_sec
+                    
                     # 记录当前技能块头部索引（插入前的位置）
                     header_index = timeline_text.index(tk.END)
                     skill_block_indices.append(header_index)
-                    timeline_text.insert(tk.END, f"—— 第{skill_index}次技能（起点：{start_sec:.2f}秒） ——\n")
-                    base_offset_frames = int(round(start_sec * 30))
-                    # 遍历偶数次（2,4,6,...)，其标签为实际累计次数
+                    timeline_text.insert(tk.END, f"—— 第{skill_index}次技能（基准起点：{skill_start_sec:.2f}秒） ——\n")
+                    
+                    # 遍历偶数次（2,4,6,...)
                     for j in range(2, per_skill_hits + 1, 2):
                         label_count = (skill_index - 1) * per_skill_hits + j
                         if label_count > 1000:
                             break
-                        tframe = times[j - 1]  # j为1基索引
-                        total_frames = base_offset_frames + tframe
+                        
+                        # 单次技能内的相对帧数 (已经包含32帧起步)
+                        # tframe 是相对于该次技能“部署动作开始”的帧数
+                        tframe = times[j - 1]  
+                        
+                        # 将基准秒转换成帧，再加上 tframe
+                        # 30帧/秒
+                        # 注意：这里可能存在对齐偏差，但通常模拟器按 fps * sec 计算总帧数
+                        base_frames = skill_start_sec * 30
+                        total_frames = int(round(base_frames + tframe))
+                        
                         sec = total_frames // 30
                         rem = total_frames % 30
+                        
                         line = f"第{label_count:04d}次: {sec}秒{rem}帧"
                         timeline_text.insert(tk.END, line + "\n")
-                    # 分页：在每次技能块之间加入明显分隔
+                        
                     if skill_index * per_skill_hits < 1000:
                         timeline_text.insert(tk.END, "—— 分页 ——\n\n")
                     skill_index += 1
             # 初始定位第一页并提示按键
             if skill_block_indices:
-                timeline_text.insert(tk.END, "\n PgUp/PgDn 翻页\n")
                 _timeline_goto_block(0)
         elif skill_selected == "二技能":
             # 技能周期：再部署时间 + 4 秒
             try:
-                cycle = float(entries['redeploy_time'].get()) + 4.0
+                cycle_val = float(entries['redeploy_time'].get()) + 4.0
             except Exception:
-                cycle = 4.0
-            timeline_text.insert(tk.END, f"技能周期：{cycle:.2f} 秒")
+                cycle_val = 4.0
+            timeline_text.insert(tk.END, f"技能周期：{cycle_val:.2f} 秒\n")
+            timeline_text.insert(tk.END, "=" * 30 + "\n")
+            timeline_text.insert(tk.END, "二技能出伤帧 (自部署起点)\n")
+            timeline_text.insert(tk.END, "注:每段可能独立随机+1帧\n")
+            timeline_text.insert(tk.END, "-" * 30 + "\n")
+            
+            base_frames = [43, 63, 65, 73, 81, 89, 91, 97, 99, 110, 112, 114, 115, 117, 118, 120]
+            for i, f in enumerate(base_frames):
+                sec = f // 30
+                rem = f % 30
+                line = f"第{i+1:02d}段: {sec}秒{rem:02d}帧"
+                timeline_text.insert(tk.END, line + "\n")
         else:
             # 三技能：显示逐帧覆盖范围与每格命中帧清单
             frame_ranges, cell_hits = compute_skill3_frame_ranges_and_cell_hits()
