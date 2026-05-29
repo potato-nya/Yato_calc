@@ -281,7 +281,8 @@ def compute_skill1_timeline(raw_attack_speed: float, is_j1: bool, landing_as: fl
     # Seg2 -> 1次双连击
     # Seg3 -> 3次双连击 (4+2)
     
-    while t <= max_frames:
+    stop_timeline = False
+    while t <= max_frames and not stop_timeline:
         for segment_idx in range(3):
             # 判断当前攻速
             curr_n = n1 if (use_two_phase and t < 270) else n2
@@ -295,6 +296,7 @@ def compute_skill1_timeline(raw_attack_speed: float, is_j1: bool, landing_as: fl
                 
                 hit_time = t + hit_offset
                 if hit_time > max_frames:
+                    stop_timeline = True
                     break
                 times.append(hit_time) # 第1击
                 times.append(hit_time) # 第2击
@@ -323,6 +325,7 @@ def compute_skill1_timeline(raw_attack_speed: float, is_j1: bool, landing_as: fl
                 for off in current_offsets:
                     hit_time = t + off
                     if hit_time > max_frames:
+                        stop_timeline = True
                         break
                     times.append(hit_time) # 第1击
                     times.append(hit_time) # 第2击
@@ -330,10 +333,10 @@ def compute_skill1_timeline(raw_attack_speed: float, is_j1: bool, landing_as: fl
                 # 推进时间 (2倍时长)
                 t += (2 * d_base)
             
-            if t > max_frames:
+            if t > max_frames or stop_timeline:
                 break
         
-        if t > max_frames:
+        if t > max_frames or stop_timeline:
             break
 
     # 构造返回结果，兼容原有UI显示格式

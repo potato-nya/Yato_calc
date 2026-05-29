@@ -338,10 +338,10 @@
                     timelineText.push(`攻击间隔(帧) = `);
                     timelineText.push(`${JSON.stringify(tl.cycle_intervals)}`);
                 } else {
-                    timelineText.push(`实际攻速 n(前9秒) = ${tl.n1}`);
+                    timelineText.push(`实际攻速 n(前10秒) = ${tl.n1}`);
                     timelineText.push(`实际攻速 n(后11秒) = ${tl.n2}`);
                     timelineText.push(`前摇 = ${tl.pre} 帧`);
-                    timelineText.push(`攻击间隔(帧, 前9秒) = `);
+                    timelineText.push(`攻击间隔(帧, 前10秒) = `);
                     timelineText.push(`${JSON.stringify(tl.cycle_intervals_pre)}`);
                     timelineText.push(`攻击间隔(帧, 后11秒) = `);
                     timelineText.push(`${JSON.stringify(tl.cycle_intervals_post)}`);
@@ -352,8 +352,8 @@
                 let insertedSplit = false;
                 for (let i = 1; i < tl.times.length; i += 2) {
                     const tframe = tl.times[i];
-                    if (!insertedSplit && Math.abs(landing_attack_speed) > 0 && tframe >= 270) {
-                        timelineText.push("———— 9秒 ————");
+                    if (!insertedSplit && Math.abs(landing_attack_speed) > 0 && tframe >= 300) {
+                        timelineText.push("———— 10秒 ————");
                         insertedSplit = true;
                     }
                     const sec = Math.floor(tframe / 30);
@@ -558,10 +558,11 @@
             let t = 31;
             const times = [];
 
-            while (t <= maxFrames) {
+            let stopTimeline = false;
+            while (t <= maxFrames && !stopTimeline) {
                 // 3个片段: Seg1(14), Seg2(14), Seg3(28 aka 14*2)
                 for (let segIdx = 0; segIdx < 3; segIdx++) {
-                    const currN = (useTwoPhase && t < 270) ? n1 : n2;
+                    const currN = (useTwoPhase && t < 300) ? n1 : n2;
 
                     if (segIdx === 0 || segIdx === 1) {
                         // 14帧基准
@@ -569,7 +570,10 @@
                         // 出伤点: (dur+1)//2
                         const hitOffset = Math.floor((dur + 1) / 2);
                         const hitTime = t + hitOffset;
-                        if (hitTime > maxFrames) break; 
+                        if (hitTime > maxFrames) {
+                            stopTimeline = true;
+                            break;
+                        }
                         times.push(hitTime); // 1st hit
                         times.push(hitTime); // 2nd hit
                         
@@ -586,16 +590,19 @@
 
                         for (let off of offsets) {
                             const hitTime = t + off;
-                            if (hitTime > maxFrames) break;
+                            if (hitTime > maxFrames) {
+                                stopTimeline = true;
+                                break;
+                            }
                             times.push(hitTime);
                             times.push(hitTime);
                         }
 
                         t += (2 * dBase);
                     }
-                    if (t > maxFrames) break;
+                    if (t > maxFrames || stopTimeline) break;
                 }
-                if (t > maxFrames) break;
+                if (t > maxFrames || stopTimeline) break;
             }
 
             // 为了UI显示“攻击间隔”，造一个示例列表
