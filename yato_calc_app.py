@@ -553,7 +553,8 @@ def calculate_attack(*args):
                 return 1.0
             # 以“每次技能段数”为一个循环，每个循环都从+5%重新开始
             cycle_hit = ((hit_count - 1) % skill_segments) + 1
-            bonus_pct = min(cycle_hit, 10) * 0.05
+            # 首次+0%，其余顺延：2次->+5%，...，11次及以后->+50%
+            bonus_pct = min(max(cycle_hit - 1, 0), 10) * 0.05
             if skill_selected == "二技能":
                 bonus_pct *= skill2_magic_scale
             return 1.0 + bonus_pct

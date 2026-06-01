@@ -309,7 +309,8 @@
             const magicBonusMultiplier = (hitCount) => {
                 if (!is_y_module) return 1.0;
                 const cycleHit = ((hitCount - 1) % skill_segments) + 1;
-                let bonusPct = Math.min(cycleHit, 10) * 0.05;
+                // 首次+0%，其余顺延：2次->+5%，...，11次及以后->+50%
+                let bonusPct = Math.min(Math.max(cycleHit - 1, 0), 10) * 0.05;
                 if (skill_selected === "二技能") {
                     bonusPct *= skill2_magic_scale;
                 }
