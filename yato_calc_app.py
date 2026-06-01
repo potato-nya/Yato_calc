@@ -63,6 +63,7 @@ fields = [
     ("攻速", "attack_speed"),
     ("落地攻速", "landing_attack_speed"),
     ("再部署时间", "redeploy_time"),
+    ("每次技能段数", "skill_segments"),
 ]
 
 # 设置主窗口背景色
@@ -82,7 +83,10 @@ for idx, (label_text, var_name) in enumerate(fields):
     label = tk.Label(input_frame, text=label_text, anchor='e', font=font_family, bg="#f5f5f5")
     label.grid(row=row, column=col*2, padx=(10, 2), pady=8, sticky='e')
     entry = tk.Entry(input_frame, width=12, justify='left', font=font_family)
-    entry.insert(0, "0")
+    if var_name == "skill_segments":
+        entry.insert(0, "16")
+    else:
+        entry.insert(0, "0")
     entry.grid(row=row, column=col*2+1, padx=(2, 18), pady=8, sticky='w')
     entries[var_name] = entry
 
@@ -96,7 +100,42 @@ skill_dropdown = tk.OptionMenu(skill_frame, skill_var, "一技能", "二技能",
 skill_dropdown.config(font=font_family)
 skill_dropdown.pack(side=tk.LEFT, padx=(0, 15))
 
+module_var = tk.StringVar(value="X模组")
+module_dropdown = tk.OptionMenu(skill_frame, module_var, "X模组", "Y模组")
+module_dropdown.config(font=font_family)
+module_dropdown.pack(side=tk.LEFT, padx=(0, 15))
+
 j1_var = tk.BooleanVar()
+y_solo_var = tk.BooleanVar()
+y_solo_check = tk.Checkbutton(
+    skill_frame,
+    text="Y无友军",
+    variable=y_solo_var,
+    font=("黑体", 9),
+    width=10,
+    height=1,
+    bg="#f5f5f5",
+    activebackground="#f5f5f5"
+)
+y_solo_check.pack(side=tk.LEFT, padx=8)
+
+def update_module_controls(*args):
+    if j1_var.get():
+        module_dropdown.config(state=tk.DISABLED)
+        y_solo_var.set(False)
+        y_solo_check.config(state=tk.DISABLED)
+    else:
+        module_dropdown.config(state=tk.NORMAL)
+        if module_var.get() == "Y模组":
+            y_solo_check.config(state=tk.NORMAL)
+        else:
+            y_solo_var.set(False)
+            y_solo_check.config(state=tk.DISABLED)
+
+j1_var.trace_add('write', update_module_controls)
+module_var.trace_add('write', update_module_controls)
+update_module_controls()
+
 j1_check = tk.Checkbutton(skill_frame, text="精一", variable=j1_var, font=("黑体", 9), width=8, height=1, bg="#f5f5f5", activebackground="#f5f5f5")
 j1_check.pack(side=tk.LEFT, padx=8)
 
@@ -422,16 +461,44 @@ def calculate_attack(*args):
         enemy_reduce = float(entries['enemy_reduce'].get())
         attack_speed = float(entries['attack_speed'].get())
         redeploy_time = float(entries['redeploy_time'].get())
+        segments_raw = entries['skill_segments'].get().strip()
+        if segments_raw.startswith('+'):
+            segments_raw = segments_raw[1:]
+        if (not segments_raw.isdigit()) or int(segments_raw) <= 0:
+            raise ValueError
+        skill_segments = int(segments_raw)
         is_j1 = j1_var.get()
         skill_selected = skill_var.get()
+        module_selected = module_var.get()
+        y_solo = y_solo_var.get()
+
+        # 每次技能段数上限：二技能16，三技能18，一技能不设上限
+        if skill_selected == "二技能":
+            skill_segments = min(skill_segments, 16)
+        elif skill_selected == "三技能":
+            skill_segments = min(skill_segments, 18)
+        
+        # 根据状态判定基础面板和模组天赋
+        if is_j1:
+            base_attack = 552
+            talent_atk = 0
+            magic_talent = 0.13
+        else:
+            if module_selected == "Y模组":
+                base_attack = 727
+                talent_atk = 26 if y_solo else 16
+                magic_talent = 0.25
+            else: # X模组
+                base_attack = 725
+                talent_atk = 23
+                magic_talent = 0.20
         
         # 计算攻击力
-        base_attack = 552 if is_j1 else 725
         attack = round(base_attack * (1 + out_attack/100))
         attack_label.config(text=f"攻击力: {attack}")
         
         # 计算实际局内加攻
-        actual_in_attack = in_attack_mul if is_j1 else (in_attack_mul + 23)
+        actual_in_attack = in_attack_mul + talent_atk
         
         # 计算技能攻击力
         base_skill_attack = attack * (1 + actual_in_attack/100) + in_attack_add
@@ -465,25 +532,43 @@ def calculate_attack(*args):
         is_gd = gd_var.get()
         
         # 计算法术攻击力（用于后续法术伤害计算）
-        if is_j1:
-            if skill_selected == "二技能":
-                magic_attack = skill_attack * 0.13 * 2.1
-            else:
-                magic_attack = skill_attack * 0.13
+        # 二技能有额外的法伤倍率叠加，精一是2.1倍，精二是2.5倍
+        if skill_selected == "二技能":
+            skill2_magic_scale = 2.1 if is_j1 else 2.5
         else:
-            if skill_selected == "二技能":
-                magic_attack = skill_attack * 0.2 * 2.5
-            else:
-                magic_attack = skill_attack * 0.2
-        
+            skill2_magic_scale = 1.0
+        magic_attack = skill_attack * magic_talent * skill2_magic_scale
+
         resist_reduction = enemy_resist / 100
+        is_y_module = (not is_j1) and (module_selected == "Y模组")
+
+        def magic_bonus_multiplier(hit_count: int) -> float:
+            """
+            Y模组额外法伤乘区：
+            - 第1~10次：+5% ... +50%
+            - 10次后固定+50%
+            - 该“百分比加成”在二技能下再受法伤倍率系数放大
+            """
+            if not is_y_module:
+                return 1.0
+            # 以“每次技能段数”为一个循环，每个循环都从+5%重新开始
+            cycle_hit = ((hit_count - 1) % skill_segments) + 1
+            bonus_pct = min(cycle_hit, 10) * 0.05
+            if skill_selected == "二技能":
+                bonus_pct *= skill2_magic_scale
+            return 1.0 + bonus_pct
+
+        def magic_damage_for_hit(hit_count: int) -> float:
+            base_magic = max(magic_attack * (1 - resist_reduction), magic_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + mag_vuln / 100)
+            # 独立乘区在算式最后额外乘上去
+            return base_magic * magic_bonus_multiplier(hit_count)
         
         # 如果没有选择戈渎，使用原有的单次伤害计算方式
         if not is_gd:
             # 计算物理伤害
             physical_damage = max(skill_attack - enemy_armor, skill_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + phy_vuln / 100)
-            # 计算法术伤害
-            magic_damage = max(magic_attack * (1 - resist_reduction), magic_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + mag_vuln / 100)
+            # 单次面板显示按第1次攻击计算
+            magic_damage = magic_damage_for_hit(1)
             
             physical_damage_label.config(text=f"物理伤害: {physical_damage:.2f}")
             magic_damage_label.config(text=f"法术伤害: {magic_damage:.2f}")
@@ -502,7 +587,9 @@ def calculate_attack(*args):
                 for col in range(4):
                     hit_count = row * 4 + col + 1
                     if hit_count <= 1000:
-                        cumulative_damage += single_hit_damage
+                        current_magic_damage = magic_damage_for_hit(hit_count)
+                        current_single_hit = physical_damage + current_magic_damage
+                        cumulative_damage += current_single_hit
                         if cumulative_damage >= 1000000:
                             line_parts.append(f"{hit_count:3d}次:{int(round(cumulative_damage)):>9d}")
                         else:
@@ -534,7 +621,7 @@ def calculate_attack(*args):
                             current_armor = enemy_armor
                           # 计算当前攻击的伤害
                         current_physical_damage = max(skill_attack - current_armor, skill_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + phy_vuln / 100)
-                        current_magic_damage = max(magic_attack * (1 - resist_reduction), magic_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + mag_vuln / 100)
+                        current_magic_damage = magic_damage_for_hit(hit_count)
                         current_single_hit = current_physical_damage + current_magic_damage
                         
                         cumulative_damage += current_single_hit
@@ -760,6 +847,8 @@ for var_name in entries:
 # 添加精一勾选框和技能选择值变化的跟踪
 j1_var.trace_add('write', calculate_attack)
 skill_var.trace_add('write', calculate_attack)
+module_var.trace_add('write', calculate_attack)
+y_solo_var.trace_add('write', calculate_attack)
 gd_var.trace_add('write', calculate_attack)
 
 # 添加底部署名

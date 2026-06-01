@@ -185,6 +185,23 @@
                     <input type="number" id="redeploy_time" name="redeploy_time" value="0" step="any">
                 </div>
             </div>
+            <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                <div>
+                    <label for="skill_segments">每次技能段数</label>
+                    <input type="number" id="skill_segments" name="skill_segments" value="16" step="1" min="1">
+                </div>
+                <div>
+                    <label for="module">模组</label>
+                    <select id="module" name="module">
+                        <option value="X模组" selected>X模组</option>
+                        <option value="Y模组">Y模组</option>
+                    </select>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; margin-top: 28px;">
+                    <input type="checkbox" id="y_solo" name="y_solo" style="width: 20px; height: 20px;">
+                    <label for="y_solo" style="margin: 0; line-height: 20px;">Y无友军</label>
+                </div>
+            </div>
             <div class="form-group">
                 <label for="skill">技能选择</label>
                 <select id="skill" name="skill">
@@ -235,14 +252,41 @@
             const attack_speed = parseFloat(document.getElementById('attack_speed').value) || 0;
             const redeploy_time = parseFloat(document.getElementById('redeploy_time').value) || 0;
             const landing_attack_speed = parseFloat(document.getElementById('landing_attack_speed').value) || 0;
+            const skill_segments_raw = document.getElementById('skill_segments').value;
 
             const is_j1 = document.getElementById('j1').checked;
             const skill_selected = document.getElementById('skill').value;
             const is_gd = document.getElementById('gd').checked;
+            const module_selected = document.getElementById('module').value;
+            const y_solo = document.getElementById('y_solo').checked;
 
-            const base_attack = is_j1 ? 552 : 725;
+            const segText = (skill_segments_raw || '').trim();
+            if (!/^\+?\d+$/.test(segText) || parseInt(segText, 10) <= 0) {
+                document.getElementById('result').innerText = "技能攻击力: 输入错误\n物理伤害: 输入错误\n法术伤害: 输入错误\n单次总伤: 输入错误";
+                document.getElementById('timeline').innerHTML = `<pre>时间轴计算错误</pre>`;
+                return;
+            }
+            let skill_segments = parseInt(segText, 10);
+            if (skill_selected === "二技能") skill_segments = Math.min(skill_segments, 16);
+            else if (skill_selected === "三技能") skill_segments = Math.min(skill_segments, 18);
+
+            let base_attack = 552;
+            let talent_atk = 0;
+            let magic_talent = 0.13;
+            if (!is_j1) {
+                if (module_selected === "Y模组") {
+                    base_attack = 727;
+                    talent_atk = y_solo ? 26 : 16;
+                    magic_talent = 0.25;
+                } else {
+                    base_attack = 725;
+                    talent_atk = 23;
+                    magic_talent = 0.20;
+                }
+            }
+
             const attack = Math.round(base_attack * (1 + out_attack / 100));
-            let actual_in_attack = is_j1 ? in_attack_mul : (in_attack_mul + 23);
+            let actual_in_attack = in_attack_mul + talent_atk;
             let skill_attack = attack * (1 + actual_in_attack / 100) + in_attack_add;
 
             if (skill_selected === "二技能") {
@@ -256,15 +300,29 @@
                 }
             }
 
-            let magic_attack = skill_attack * (is_j1 ? 0.13 : 0.2);
-            if (skill_selected === "二技能") {
-                magic_attack *= is_j1 ? 2.1 : 2.5;
-            }
+            const skill2_magic_scale = skill_selected === "二技能" ? (is_j1 ? 2.1 : 2.5) : 1.0;
+            let magic_attack = skill_attack * magic_talent * skill2_magic_scale;
 
             const resist_reduction = enemy_resist / 100;
+            const is_y_module = (!is_j1) && (module_selected === "Y模组");
+
+            const magicBonusMultiplier = (hitCount) => {
+                if (!is_y_module) return 1.0;
+                const cycleHit = ((hitCount - 1) % skill_segments) + 1;
+                let bonusPct = Math.min(cycleHit, 10) * 0.05;
+                if (skill_selected === "二技能") {
+                    bonusPct *= skill2_magic_scale;
+                }
+                return 1.0 + bonusPct;
+            };
+
+            const magicDamageForHit = (hitCount) => {
+                const baseMagic = Math.max(magic_attack * (1 - resist_reduction), magic_attack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + mag_vuln / 100);
+                return baseMagic * magicBonusMultiplier(hitCount);
+            };
 
             let physical_damage = Math.max(skill_attack - enemy_armor, skill_attack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + phy_vuln / 100);
-            let magic_damage = Math.max(magic_attack * (1 - resist_reduction), magic_attack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + mag_vuln / 100);
+            let magic_damage = magicDamageForHit(1);
 
             let single_hit_damage = physical_damage + magic_damage;
 
@@ -281,7 +339,7 @@
                         if (hit_count <= 1000) {
                             let current_armor = hit_count <= 15 ? enemy_armor + (2900 - (hit_count - 1) * 200) : enemy_armor;
                             physical_damage = Math.max(skill_attack - current_armor, skill_attack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + phy_vuln / 100);
-                            magic_damage = Math.max(magic_attack * (1 - resist_reduction), magic_attack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + mag_vuln / 100);
+                            magic_damage = magicDamageForHit(hit_count);
                             single_hit_damage = physical_damage + magic_damage;
                             cumulative_damage += single_hit_damage;
                             let damage_text = hit_count % 16 === 0 ? `<span style='color: red;'>${formatNumber(cumulative_damage.toFixed(2), 12)}</span>` : formatNumber(cumulative_damage.toFixed(2), 12);
@@ -302,7 +360,9 @@
                     for (let col = 0; col < 4; col++) {
                         let hit_count = row * 4 + col + 1;
                         if (hit_count <= 1000) {
-                            cumulative_damage += single_hit_damage;
+                            const current_magic_damage = magicDamageForHit(hit_count);
+                            const current_single_hit = physical_damage + current_magic_damage;
+                            cumulative_damage += current_single_hit;
                             let damage_text = hit_count % 16 === 0 ? `<span style='color: red;'>${formatNumber(cumulative_damage.toFixed(2), 12)}</span>` : formatNumber(cumulative_damage.toFixed(2), 12);
                             line_parts.push(`${formatNumber(hit_count, 3)}次: ${damage_text}`);
                         } else {
@@ -658,6 +718,36 @@
             }
             return { frameRanges, cellHits };
         }
+
+        function updateModuleControls() {
+            const isJ1 = document.getElementById('j1').checked;
+            const moduleSel = document.getElementById('module');
+            const ySolo = document.getElementById('y_solo');
+            if (!moduleSel || !ySolo) return;
+
+            if (isJ1) {
+                moduleSel.disabled = true;
+                ySolo.checked = false;
+                ySolo.disabled = true;
+                return;
+            }
+
+            moduleSel.disabled = false;
+            if (moduleSel.value === 'Y模组') {
+                ySolo.disabled = false;
+            } else {
+                ySolo.checked = false;
+                ySolo.disabled = true;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const j1 = document.getElementById('j1');
+            const moduleSel = document.getElementById('module');
+            if (j1) j1.addEventListener('change', updateModuleControls);
+            if (moduleSel) moduleSel.addEventListener('change', updateModuleControls);
+            updateModuleControls();
+        });
     </script>
 </body>
 </html>
