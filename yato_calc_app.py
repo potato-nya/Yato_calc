@@ -547,7 +547,7 @@ def calculate_attack(*args):
             Y模组额外法伤乘区：
             - 第1~10次：+5% ... +50%
             - 10次后固定+50%
-            - 该“百分比加成”在二技能下再受法伤倍率系数放大
+            - 独立乘区不再额外受二技能倍率放大
             """
             if not is_y_module:
                 return 1.0
@@ -555,8 +555,6 @@ def calculate_attack(*args):
             cycle_hit = ((hit_count - 1) % skill_segments) + 1
             # 首次+0%，其余顺延：2次->+5%，...，11次及以后->+50%
             bonus_pct = min(max(cycle_hit - 1, 0), 10) * 0.05
-            if skill_selected == "二技能":
-                bonus_pct *= skill2_magic_scale
             return 1.0 + bonus_pct
 
         def magic_damage_for_hit(hit_count: int) -> float:
