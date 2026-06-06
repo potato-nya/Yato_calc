@@ -50,6 +50,8 @@ else:
 
 # 创建标签和输入框
 fields = [
+    ("白值增益", "base_bonus"),
+    ("最终乘算%", "final_mul"),
     ("局外加攻%", "out_attack"),
     ("局内加攻%（乘算）", "in_attack_mul"),
     ("局内加攻（加算）", "in_attack_add"),
@@ -85,6 +87,8 @@ for idx, (label_text, var_name) in enumerate(fields):
     entry = tk.Entry(input_frame, width=12, justify='left', font=font_family)
     if var_name == "skill_segments":
         entry.insert(0, "16")
+    elif var_name == "final_mul":
+        entry.insert(0, "100")
     else:
         entry.insert(0, "0")
     entry.grid(row=row, column=col*2+1, padx=(2, 18), pady=8, sticky='w')
@@ -450,6 +454,10 @@ def compute_skill3_frame_ranges_and_cell_hits():
 # 修改计算攻击力的函数，增加最终伤害计算
 def calculate_attack(*args):
     try:
+        base_bonus = float(entries['base_bonus'].get())
+        final_mul = float(entries['final_mul'].get())
+        if final_mul < 0:
+            raise ValueError
         out_attack = float(entries['out_attack'].get())
         in_attack_mul = float(entries['in_attack_mul'].get())
         in_attack_add = float(entries['in_attack_add'].get())
@@ -492,6 +500,9 @@ def calculate_attack(*args):
                 base_attack = 725
                 talent_atk = 23
                 magic_talent = 0.20
+
+        # 白值增益直接作用于基础面板；若结果为负则按0处理
+        base_attack = max(base_attack + base_bonus, 0)
         
         # 计算攻击力
         attack = round(base_attack * (1 + out_attack/100))
@@ -500,8 +511,8 @@ def calculate_attack(*args):
         # 计算实际局内加攻
         actual_in_attack = in_attack_mul + talent_atk
         
-        # 计算技能攻击力
-        base_skill_attack = attack * (1 + actual_in_attack/100) + in_attack_add
+        # 白值/局外/局内/加算计算完成后再乘最终乘算系数
+        base_skill_attack = (attack * (1 + actual_in_attack/100) + in_attack_add) * (final_mul / 100)
         
         if skill_selected == "一技能":
             skill_attack = base_skill_attack

@@ -131,6 +131,17 @@
             <div class="section-title">参数输入：带有%的为百分比</div>
             <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
                 <div>
+                    <label for="base_bonus">白值增益</label>
+                    <input type="number" id="base_bonus" name="base_bonus" value="0" step="any">
+                </div>
+                <div>
+                    <label for="final_mul">最终乘算%</label>
+                    <input type="number" id="final_mul" name="final_mul" value="100" step="any" min="0">
+                </div>
+                <div></div>
+            </div>
+            <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                <div>
                     <label for="out_attack">局外加攻%</label>
                     <input type="number" id="out_attack" name="out_attack" value="0">
                 </div>
@@ -240,6 +251,14 @@
     </div>
     <script>
     function calculate() {
+            const base_bonus = parseFloat(document.getElementById('base_bonus').value) || 0;
+            const final_mul = parseFloat(document.getElementById('final_mul').value);
+            if (Number.isNaN(final_mul) || final_mul < 0) {
+                document.getElementById('result').innerText = "技能攻击力: 输入错误\n物理伤害: 输入错误\n法术伤害: 输入错误\n单次总伤: 输入错误";
+                document.getElementById('timeline').innerHTML = `<pre>时间轴计算错误</pre>`;
+                return;
+            }
+
             const out_attack = parseFloat(document.getElementById('out_attack').value) || 0;
             const in_attack_mul = parseFloat(document.getElementById('in_attack_mul').value) || 0;
             const in_attack_add = parseFloat(document.getElementById('in_attack_add').value) || 0;
@@ -285,9 +304,12 @@
                 }
             }
 
+            // 白值增益直接作用基础面板，且最低不小于0
+            base_attack = Math.max(base_attack + base_bonus, 0);
+
             const attack = Math.round(base_attack * (1 + out_attack / 100));
             let actual_in_attack = in_attack_mul + talent_atk;
-            let skill_attack = attack * (1 + actual_in_attack / 100) + in_attack_add;
+            let skill_attack = (attack * (1 + actual_in_attack / 100) + in_attack_add) * (final_mul / 100);
 
             if (skill_selected === "二技能") {
                 skill_attack *= is_j1 ? 1.3 : 1.5;
