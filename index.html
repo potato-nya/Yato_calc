@@ -221,6 +221,12 @@
                     <option value="三技能">三技能</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label for="skill_level">技能等级</label>
+                <select id="skill_level" name="skill_level">
+                    <option value="10" selected>10</option>
+                </select>
+            </div>
             <div class="form-group" style="display: flex; align-items: center; justify-content: space-around; gap: 30px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <input type="checkbox" id="j1" name="elite_stage" value="精一" style="width: 20px; height: 20px;">
@@ -250,6 +256,29 @@
         </div>
     </div>
     <script>
+    // v3.2 技能等级参数表（请按实际数据调整）
+    const SKILL1_ATTACK_SPEED_BONUS_BY_LEVEL = {
+        1: 30.0, 2: 35.0, 3: 40.0, 4: 45.0, 5: 50.0,
+        6: 60.0, 7: 70.0, 8: 80.0, 9: 90.0, 10: 100.0,
+    };
+    const SKILL2_ATK_MUL_BY_LEVEL = {
+        1: 1.05, 2: 1.08, 3: 1.12, 4: 1.16, 5: 1.20,
+        6: 1.25, 7: 1.30, 8: 1.35, 9: 1.40, 10: 1.50,
+    };
+    const SKILL2_TALENT_SCALE_BY_LEVEL = {
+        1: 1.5, 2: 1.6, 3: 1.7, 4: 1.8, 5: 1.9,
+        6: 2.0, 7: 2.1, 8: 2.2, 9: 2.35, 10: 2.5,
+    };
+    const SKILL3_ATK_MUL_BY_LEVEL = {
+        1: 2.0, 2: 2.1, 3: 2.2, 4: 2.3, 5: 2.4,
+        6: 2.5, 7: 2.6, 8: 2.7, 9: 2.8, 10: 3.0,
+    };
+
+    function getSkillParamByLevel(mapObj, level) {
+        if (Object.prototype.hasOwnProperty.call(mapObj, level)) return mapObj[level];
+        return mapObj[10];
+    }
+
     function calculate() {
             const base_bonus = parseFloat(document.getElementById('base_bonus').value) || 0;
             const final_mul = parseFloat(document.getElementById('final_mul').value);
@@ -272,6 +301,7 @@
             const redeploy_time = parseFloat(document.getElementById('redeploy_time').value) || 0;
             const landing_attack_speed = parseFloat(document.getElementById('landing_attack_speed').value) || 0;
             const skill_segments_raw = document.getElementById('skill_segments').value;
+            const skill_level_raw = document.getElementById('skill_level').value;
 
             const is_j1 = document.getElementById('j1').checked;
             const skill_selected = document.getElementById('skill').value;
@@ -285,6 +315,20 @@
                 document.getElementById('timeline').innerHTML = `<pre>时间轴计算错误</pre>`;
                 return;
             }
+            const levelText = (skill_level_raw || '').trim();
+            if (!/^\d+$/.test(levelText)) {
+                document.getElementById('result').innerText = "技能攻击力: 输入错误\n物理伤害: 输入错误\n法术伤害: 输入错误\n单次总伤: 输入错误";
+                document.getElementById('timeline').innerHTML = `<pre>时间轴计算错误</pre>`;
+                return;
+            }
+            const skill_level = parseInt(levelText, 10);
+            const max_skill_level = is_j1 ? 7 : 10;
+            if (skill_level < 1 || skill_level > max_skill_level) {
+                document.getElementById('result').innerText = "技能攻击力: 输入错误\n物理伤害: 输入错误\n法术伤害: 输入错误\n单次总伤: 输入错误";
+                document.getElementById('timeline').innerHTML = `<pre>时间轴计算错误</pre>`;
+                return;
+            }
+
             let skill_segments = parseInt(segText, 10);
             if (skill_selected === "二技能") skill_segments = Math.min(skill_segments, 16);
             else if (skill_selected === "三技能") skill_segments = Math.min(skill_segments, 18);
@@ -311,18 +355,18 @@
             let actual_in_attack = in_attack_mul + talent_atk;
             let skill_attack = (attack * (1 + actual_in_attack / 100) + in_attack_add) * (final_mul / 100);
 
+            const skill2_atk_mul = getSkillParamByLevel(SKILL2_ATK_MUL_BY_LEVEL, skill_level);
+            const skill2_talent_scale = getSkillParamByLevel(SKILL2_TALENT_SCALE_BY_LEVEL, skill_level);
+            const skill3_atk_mul = getSkillParamByLevel(SKILL3_ATK_MUL_BY_LEVEL, skill_level);
+            const skill1_as_bonus = getSkillParamByLevel(SKILL1_ATTACK_SPEED_BONUS_BY_LEVEL, skill_level);
+
             if (skill_selected === "二技能") {
-                skill_attack *= is_j1 ? 1.3 : 1.5;
+                skill_attack *= skill2_atk_mul;
             } else if (skill_selected === "三技能") {
-                if (is_j1) {
-                    document.getElementById('result').innerText = "技能攻击力: 输入错误\n物理伤害: 输入错误\n法术伤害: 输入错误\n单次总伤: 输入错误";
-                    return;
-                } else {
-                    skill_attack *= 3;
-                }
+                skill_attack *= skill3_atk_mul;
             }
 
-            const skill2_magic_scale = skill_selected === "二技能" ? (is_j1 ? 2.1 : 2.5) : 1.0;
+            const skill2_magic_scale = skill_selected === "二技能" ? skill2_talent_scale : 1.0;
             let magic_attack = skill_attack * magic_talent * skill2_magic_scale;
 
             const resist_reduction = enemy_resist / 100;
@@ -411,7 +455,7 @@
                 timelineText.push(`技能周期：${cycleSec.toFixed(2)} 秒`);
 
                 // 计算一技能时间轴（630帧窗口）
-                const tl = computeSkill1Timeline(attack_speed, is_j1, landing_attack_speed, 630);
+                const tl = computeSkill1Timeline(attack_speed + skill1_as_bonus, is_j1, landing_attack_speed, 630);
                 if ('n' in tl) {
                     timelineText.push(`实际攻速 n = ${tl.n}`);
                     timelineText.push(`前摇 = ${tl.pre} 帧`);
@@ -761,12 +805,39 @@
             }
         }
 
+        function updateSkillLevelOptions() {
+            const isJ1 = document.getElementById('j1').checked;
+            const skillLevelSel = document.getElementById('skill_level');
+            if (!skillLevelSel) return;
+
+            const maxLevel = isJ1 ? 7 : 10;
+            const prevValue = parseInt(skillLevelSel.value || '0', 10);
+
+            skillLevelSel.innerHTML = '';
+            for (let lv = 1; lv <= maxLevel; lv++) {
+                const opt = document.createElement('option');
+                opt.value = String(lv);
+                opt.textContent = String(lv);
+                skillLevelSel.appendChild(opt);
+            }
+
+            if (!Number.isNaN(prevValue) && prevValue >= 1 && prevValue <= maxLevel) {
+                skillLevelSel.value = String(prevValue);
+            } else {
+                skillLevelSel.value = String(maxLevel);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const j1 = document.getElementById('j1');
             const moduleSel = document.getElementById('module');
+            const skillLevelSel = document.getElementById('skill_level');
             if (j1) j1.addEventListener('change', updateModuleControls);
+            if (j1) j1.addEventListener('change', updateSkillLevelOptions);
             if (moduleSel) moduleSel.addEventListener('change', updateModuleControls);
+            if (skillLevelSel) skillLevelSel.addEventListener('change', calculate);
             updateModuleControls();
+            updateSkillLevelOptions();
         });
     </script>
 </body>

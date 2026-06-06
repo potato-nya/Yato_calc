@@ -15,6 +15,33 @@ import math
 import os
 import sys
 
+# v3.2 技能等级参数表（请按实际数据调整）
+# 说明：
+# - 一技能仅使用攻速加成（attack_speed_bonus）
+# - 二技能使用攻击力乘算倍率（atk_mul）与天赋法伤放大倍率（talent_scale）
+# - 三技能仅使用攻击力乘算倍率（atk_mul）
+SKILL1_ATTACK_SPEED_BONUS_BY_LEVEL = {
+    1: 30.0, 2: 35.0, 3: 40.0, 4: 45.0, 5: 50.0,
+    6: 60.0, 7: 70.0, 8: 80.0, 9: 90.0, 10: 100.0,
+}
+SKILL2_ATK_MUL_BY_LEVEL = {
+    1: 1.05, 2: 1.08, 3: 1.12, 4: 1.16, 5: 1.20,
+    6: 1.25, 7: 1.30, 8: 1.35, 9: 1.40, 10: 1.50,
+}
+SKILL2_TALENT_SCALE_BY_LEVEL = {
+    1: 1.5, 2: 1.6, 3: 1.7, 4: 1.8, 5: 1.9,
+    6: 2.0, 7: 2.1, 8: 2.2, 9: 2.35, 10: 2.5,
+}
+SKILL3_ATK_MUL_BY_LEVEL = {
+    1: 2.0, 2: 2.1, 3: 2.2, 4: 2.3, 5: 2.4,
+    6: 2.5, 7: 2.6, 8: 2.7, 9: 2.8, 10: 3.0,
+}
+
+def _skill_param_by_level(param_map, level):
+    if level in param_map:
+        return param_map[level]
+    return param_map[max(param_map.keys())]
+
 # 创建主窗口
 root = tk.Tk()
 root.title("夜刀计算器")
@@ -104,6 +131,13 @@ skill_dropdown = tk.OptionMenu(skill_frame, skill_var, "一技能", "二技能",
 skill_dropdown.config(font=font_family)
 skill_dropdown.pack(side=tk.LEFT, padx=(0, 15))
 
+skill_level_label = tk.Label(skill_frame, text="技能等级:", font=font_family, bg="#f5f5f5")
+skill_level_label.pack(side=tk.LEFT, padx=(0, 5))
+skill_level_var = tk.StringVar(value="10")
+skill_level_dropdown = tk.OptionMenu(skill_frame, skill_level_var, "10")
+skill_level_dropdown.config(font=font_family)
+skill_level_dropdown.pack(side=tk.LEFT, padx=(0, 15))
+
 module_var = tk.StringVar(value="X模组")
 module_dropdown = tk.OptionMenu(skill_frame, module_var, "X模组", "Y模组")
 module_dropdown.config(font=font_family)
@@ -136,9 +170,23 @@ def update_module_controls(*args):
             y_solo_var.set(False)
             y_solo_check.config(state=tk.DISABLED)
 
+def update_skill_level_options(*args):
+    max_level = 7 if j1_var.get() else 10
+    menu = skill_level_dropdown["menu"]
+    menu.delete(0, "end")
+    for lv in range(1, max_level + 1):
+        menu.add_command(label=str(lv), command=tk._setit(skill_level_var, str(lv)))
+
+    current = skill_level_var.get().strip()
+    if (not current.isdigit()) or int(current) < 1:
+        skill_level_var.set(str(max_level))
+    elif int(current) > max_level:
+        skill_level_var.set(str(max_level))
+
 j1_var.trace_add('write', update_module_controls)
 module_var.trace_add('write', update_module_controls)
 update_module_controls()
+update_skill_level_options()
 
 j1_check = tk.Checkbutton(skill_frame, text="精一", variable=j1_var, font=("黑体", 9), width=8, height=1, bg="#f5f5f5", activebackground="#f5f5f5")
 j1_check.pack(side=tk.LEFT, padx=8)
@@ -477,6 +525,16 @@ def calculate_attack(*args):
         skill_segments = int(segments_raw)
         is_j1 = j1_var.get()
         skill_selected = skill_var.get()
+        skill_level_raw = skill_level_var.get().strip()
+        if (not skill_level_raw.isdigit()):
+            raise ValueError
+        skill_level = int(skill_level_raw)
+        max_skill_level = 7 if is_j1 else 10
+        if skill_level < 1:
+            raise ValueError
+        if skill_level > max_skill_level:
+            skill_level = max_skill_level
+            skill_level_var.set(str(skill_level))
         module_selected = module_var.get()
         y_solo = y_solo_var.get()
 
@@ -517,24 +575,11 @@ def calculate_attack(*args):
         if skill_selected == "一技能":
             skill_attack = base_skill_attack
         elif skill_selected == "二技能":
-            if is_j1:
-                skill_attack = base_skill_attack * 1.3  # 精一时二技能系数为1.3
-            else:
-                skill_attack = base_skill_attack * 1.5
+            skill2_atk_mul = _skill_param_by_level(SKILL2_ATK_MUL_BY_LEVEL, skill_level)
+            skill_attack = base_skill_attack * skill2_atk_mul
         elif skill_selected == "三技能":
-            if is_j1:
-                # 精一时三技能显示输入错误
-                skill_attack_label.config(text="技能攻击力: 输入错误")
-                physical_damage_label.config(text="物理伤害: 输入错误")
-                magic_damage_label.config(text="法术伤害: 输入错误")
-                single_hit_label.config(text="单次总伤: 输入错误")
-                cumulative_damage_text.config(state=tk.NORMAL)
-                cumulative_damage_text.delete(1.0, tk.END)
-                cumulative_damage_text.insert(tk.END, "累计伤害计算错误")
-                cumulative_damage_text.config(state=tk.DISABLED)
-                return
-            else:
-                skill_attack = base_skill_attack * 3
+            skill3_atk_mul = _skill_param_by_level(SKILL3_ATK_MUL_BY_LEVEL, skill_level)
+            skill_attack = base_skill_attack * skill3_atk_mul
         else:
             skill_attack = base_skill_attack
             
@@ -545,7 +590,7 @@ def calculate_attack(*args):
         # 计算法术攻击力（用于后续法术伤害计算）
         # 二技能有额外的法伤倍率叠加，精一是2.1倍，精二是2.5倍
         if skill_selected == "二技能":
-            skill2_magic_scale = 2.1 if is_j1 else 2.5
+            skill2_magic_scale = _skill_param_by_level(SKILL2_TALENT_SCALE_BY_LEVEL, skill_level)
         else:
             skill2_magic_scale = 1.0
         magic_attack = skill_attack * magic_talent * skill2_magic_scale
@@ -700,7 +745,8 @@ def calculate_attack(*args):
             except Exception:
                 landing_as = 0.0
             # 覆盖完整技能时长，使用 21s = 630 帧
-            tl = compute_skill1_timeline(raw_as, is_j1, landing_as, max_frames=630)
+            skill1_as_bonus = _skill_param_by_level(SKILL1_ATTACK_SPEED_BONUS_BY_LEVEL, skill_level)
+            tl = compute_skill1_timeline(raw_as + skill1_as_bonus, is_j1, landing_as, max_frames=630)
             if 'n' in tl:
                 header = (
                     f"实际攻速 n = {tl['n']}\n"
@@ -856,10 +902,12 @@ for var_name in entries:
 
 # 添加精一勾选框和技能选择值变化的跟踪
 j1_var.trace_add('write', calculate_attack)
+j1_var.trace_add('write', update_skill_level_options)
 skill_var.trace_add('write', calculate_attack)
 module_var.trace_add('write', calculate_attack)
 y_solo_var.trace_add('write', calculate_attack)
 gd_var.trace_add('write', calculate_attack)
+skill_level_var.trace_add('write', calculate_attack)
 
 # 添加底部署名
 footer_label = tk.Label(root, text="KirinRYatoCalc by potatonya", font=("黑体", 9), fg="#161616", bg="#f5f5f5")
