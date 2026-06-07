@@ -42,6 +42,11 @@ def _skill_param_by_level(param_map, level):
         return param_map[level]
     return param_map[max(param_map.keys())]
 
+def _round_half_up(value: float) -> int:
+    if value >= 0:
+        return int(math.floor(value + 0.5))
+    return int(math.ceil(value - 0.5))
+
 # 创建主窗口
 root = tk.Tk()
 root.title("夜刀计算器")
@@ -562,8 +567,9 @@ def calculate_attack(*args):
         # 白值增益直接作用于基础面板；若结果为负则按0处理
         base_attack = max(base_attack + base_bonus, 0)
         
-        # 计算攻击力
-        attack = round(base_attack * (1 + out_attack/100))
+        # 基础攻击与局外加成结算后，先进行round取整，再进入后续乘区
+        attack_pre_round = base_attack * (1 + out_attack/100)
+        attack = _round_half_up(attack_pre_round)
         attack_label.config(text=f"攻击力: {attack}")
         
         # 计算实际局内加攻

@@ -351,7 +351,9 @@
             // 白值增益直接作用基础面板，且最低不小于0
             base_attack = Math.max(base_attack + base_bonus, 0);
 
-            const attack = Math.round(base_attack * (1 + out_attack / 100));
+            // 基础攻击与局外加成结算后，先进行round取整，再进入后续乘区
+            const attackPreRound = base_attack * (1 + out_attack / 100);
+            const attack = Math.round(attackPreRound);
             let actual_in_attack = in_attack_mul + talent_atk;
             let skill_attack = (attack * (1 + actual_in_attack / 100) + in_attack_add) * (final_mul / 100);
 
