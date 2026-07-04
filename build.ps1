@@ -131,6 +131,12 @@ if ($iconToUse -and (Test-Path $iconToUse)) {
     $argsList += @('--add-data', ("{0};assets" -f $iconToUse))
 }
 
+# 打包默认背景图
+$bgDir = (Join-Path $PSScriptRoot 'assets\backgrounds')
+if (Test-Path $bgDir) {
+    $argsList += @('--add-data', ("{0};assets/backgrounds" -f $bgDir))
+}
+
 # 执行打包
 & $python -m PyInstaller @argsList | Out-Host
 if ($LASTEXITCODE -ne 0) { Write-Error 'PyInstaller build failed'; exit 1 }

@@ -66,6 +66,10 @@
         }
         .form-group {
             margin-bottom: 15px;
+            padding: 12px 14px;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            background-color: #fcfcfd;
         }
         label {
             font-weight: bold;
@@ -129,78 +133,128 @@
         <h1 style="text-align: center;">夜刀计算器</h1>
         <form id="calculator-form">
             <div class="section-title">参数输入：带有%的为百分比</div>
-            <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
-                <div>
-                    <label for="base_bonus">白值增益</label>
-                    <input type="number" id="base_bonus" name="base_bonus" value="0" step="any">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; align-items: start;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <div style="font-weight:bold; margin-bottom:8px;">增益效果</div>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                        <div>
+                            <label for="base_bonus">白值增益</label>
+                            <input type="number" id="base_bonus" name="base_bonus" value="0" step="any">
+                        </div>
+                        <div>
+                            <label for="out_attack">局外加攻%</label>
+                            <input type="number" id="out_attack" name="out_attack" value="0">
+                        </div>
+                        <div>
+                            <label for="in_attack_mul">局内加攻%（乘算）</label>
+                            <input type="number" id="in_attack_mul" name="in_attack_mul" value="0">
+                        </div>
+                        <div>
+                            <label for="in_attack_add">局内加攻（加算）</label>
+                            <input type="number" id="in_attack_add" name="in_attack_add" value="0">
+                        </div>
+                        <div>
+                            <label for="final_mul">最终乘算%</label>
+                            <input type="number" id="final_mul" name="final_mul" value="100" step="any" min="0">
+                        </div>
+                        <div>
+                            <label for="attack_speed">攻速加成</label>
+                            <input type="number" id="attack_speed" name="attack_speed" value="0" step="any">
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <label for="final_mul">最终乘算%</label>
-                    <input type="number" id="final_mul" name="final_mul" value="100" step="any" min="0">
-                </div>
-                <div></div>
-            </div>
-            <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
-                <div>
-                    <label for="out_attack">局外加攻%</label>
-                    <input type="number" id="out_attack" name="out_attack" value="0">
-                </div>
-                <div>
-                    <label for="in_attack_mul">局内加攻%（乘算）</label>
-                    <input type="number" id="in_attack_mul" name="in_attack_mul" value="0">
-                </div>
-                <div>
-                    <label for="in_attack_add">局内加攻（加算）</label>
-                    <input type="number" id="in_attack_add" name="in_attack_add" value="0">
-                </div>
-            </div>
-            <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
-                <div>
-                    <label for="phy_vuln">物理易伤%</label>
-                    <input type="number" id="phy_vuln" name="phy_vuln" value="0">
-                </div>
-                <div>
-                    <label for="mag_vuln">法术易伤%</label>
-                    <input type="number" id="mag_vuln" name="mag_vuln" value="0">
-                </div>
-                <div>
-                    <label for="fragile">脆弱%</label>
-                    <input type="number" id="fragile" name="fragile" value="0">
-                </div>
-            </div>
-            <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
-                <div>
-                    <label for="enemy_armor">敌方护甲</label>
-                    <input type="number" id="enemy_armor" name="enemy_armor" value="0">
-                </div>
-                <div>
-                    <label for="enemy_resist">敌方法抗</label>
-                    <input type="number" id="enemy_resist" name="enemy_resist" value="0">
-                </div>
-                <div>
-                    <label for="enemy_reduce">敌方减伤%</label>
-                    <input type="number" id="enemy_reduce" name="enemy_reduce" value="0">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <div style="font-weight:bold; margin-bottom:8px;">通用乘区</div>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                        <div>
+                            <label for="fragile">脆弱%</label>
+                            <input type="number" id="fragile" name="fragile" value="0">
+                        </div>
+                        <div>
+                            <label for="enemy_reduce">敌方减伤%</label>
+                            <input type="number" id="enemy_reduce" name="enemy_reduce" value="0">
+                        </div>
+                        <div>
+                            <label for="general_other_mul">其他乘区（通用）%</label>
+                            <input type="number" id="general_other_mul" name="general_other_mul" value="0">
+                        </div>
+                        <div></div>
+                    </div>
                 </div>
             </div>
-            <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
-                <div>
-                    <label for="attack_speed">攻速</label>
-                    <input type="number" id="attack_speed" name="attack_speed" value="0" step="any">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; align-items: start; margin-top: 15px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <div style="font-weight:bold; margin-bottom:8px;">物理乘区</div>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                        <div>
+                            <label for="enemy_armor">敌方护甲</label>
+                            <input type="number" id="enemy_armor" name="enemy_armor" value="0">
+                        </div>
+                        <div>
+                            <label for="phy_vuln">物理易伤%</label>
+                            <input type="number" id="phy_vuln" name="phy_vuln" value="0">
+                        </div>
+                        <div>
+                            <label for="phy_fragile">物理脆弱%</label>
+                            <input type="number" id="phy_fragile" name="phy_fragile" value="0">
+                        </div>
+                        <div>
+                            <label for="phy_other_mul">其他乘区（物理）%</label>
+                            <input type="number" id="phy_other_mul" name="phy_other_mul" value="0">
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <label for="landing_attack_speed">落地攻速</label>
-                    <input type="number" id="landing_attack_speed" name="landing_attack_speed" value="0" step="any">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <div style="font-weight:bold; margin-bottom:8px;">法术乘区</div>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                        <div>
+                            <label for="enemy_resist">敌方法抗</label>
+                            <input type="number" id="enemy_resist" name="enemy_resist" value="0">
+                        </div>
+                        <div>
+                            <label for="mag_vuln">法术易伤%</label>
+                            <input type="number" id="mag_vuln" name="mag_vuln" value="0">
+                        </div>
+                        <div>
+                            <label for="mag_fragile">法术脆弱%</label>
+                            <input type="number" id="mag_fragile" name="mag_fragile" value="0">
+                        </div>
+                        <div>
+                            <label for="mag_other_mul">其他乘区（法术）%</label>
+                            <input type="number" id="mag_other_mul" name="mag_other_mul" value="0">
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <label for="redeploy_time">再部署时间</label>
-                    <input type="number" id="redeploy_time" name="redeploy_time" value="0" step="any">
+            </div>
+            <div class="form-group">
+                <div style="font-weight:bold; margin-bottom:8px;">部署信息</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                    <div>
+                        <label for="redeploy_time">再部署时间</label>
+                        <input type="number" id="redeploy_time" name="redeploy_time" value="0" step="any">
+                    </div>
+                    <div>
+                        <label for="skill_segments">每次技能段数</label>
+                        <input type="number" id="skill_segments" name="skill_segments" value="16" step="1" min="1">
+                    </div>
+                    <div></div>
+                </div>
+            </div>
+            <div class="form-group">
+                <div style="font-weight:bold; margin-bottom:8px;">临时增益</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                    <div>
+                        <label for="landing_attack_speed">落地攻速</label>
+                        <input type="number" id="landing_attack_speed" name="landing_attack_speed" value="0" step="any">
+                    </div>
+                    <div>
+                        <label for="canned_attack">罐头类加攻%</label>
+                        <input type="number" id="canned_attack" name="canned_attack" value="0">
+                    </div>
+                    <div></div>
                 </div>
             </div>
             <div class="form-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
-                <div>
-                    <label for="skill_segments">每次技能段数</label>
-                    <input type="number" id="skill_segments" name="skill_segments" value="16" step="1" min="1">
-                </div>
                 <div>
                     <label for="module">模组</label>
                     <select id="module" name="module">
@@ -212,6 +266,7 @@
                     <input type="checkbox" id="y_solo" name="y_solo" style="width: 20px; height: 20px;">
                     <label for="y_solo" style="margin: 0; line-height: 20px;">Y无友军</label>
                 </div>
+                <div></div>
             </div>
             <div class="form-group">
                 <label for="skill">技能选择</label>
@@ -292,8 +347,14 @@
             const in_attack_mul = parseFloat(document.getElementById('in_attack_mul').value) || 0;
             const in_attack_add = parseFloat(document.getElementById('in_attack_add').value) || 0;
             const phy_vuln = parseFloat(document.getElementById('phy_vuln').value) || 0;
+            const phy_fragile = parseFloat(document.getElementById('phy_fragile').value) || 0;
             const mag_vuln = parseFloat(document.getElementById('mag_vuln').value) || 0;
+            const mag_fragile = parseFloat(document.getElementById('mag_fragile').value) || 0;
             const fragile = parseFloat(document.getElementById('fragile').value) || 0;
+            const canned_attack = parseFloat(document.getElementById('canned_attack').value) || 0;
+            const phy_other_mul = parseFloat(document.getElementById('phy_other_mul').value) || 0;
+            const mag_other_mul = parseFloat(document.getElementById('mag_other_mul').value) || 0;
+            const general_other_mul = parseFloat(document.getElementById('general_other_mul').value) || 0;
             const enemy_armor = parseFloat(document.getElementById('enemy_armor').value) || 0;
             const enemy_resist = parseFloat(document.getElementById('enemy_resist').value) || 0;
             const enemy_reduce = parseFloat(document.getElementById('enemy_reduce').value) || 0;
@@ -382,12 +443,29 @@
                 return 1.0 + bonusPct;
             };
 
-            const magicDamageForHit = (hitCount) => {
-                const baseMagic = Math.max(magic_attack * (1 - resist_reduction), magic_attack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + mag_vuln / 100);
-                return baseMagic * magicBonusMultiplier(hitCount);
+            const cannedAttackMultiplier = (hitCount) => {
+                if (skill_selected !== "二技能") return 1.0;
+                const cycleHit = ((hitCount - 1) % skill_segments) + 1;
+                if (cycleHit === 1) return 1.0 + canned_attack / 100;
+                return 1.0;
             };
 
-            let physical_damage = Math.max(skill_attack - enemy_armor, skill_attack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + phy_vuln / 100);
+            const physicalDamageForHit = (hitCount) => {
+                const hitSkillAttack = skill_attack * cannedAttackMultiplier(hitCount);
+                const basePhysical = Math.max(hitSkillAttack - enemy_armor, hitSkillAttack * 0.05) * (1 - enemy_reduce / 100);
+                const damageMultiplier = (1 + phy_vuln / 100) * (1 + phy_fragile / 100) * (1 + fragile / 100) * (1 + phy_other_mul / 100) * (1 + general_other_mul / 100);
+                return basePhysical * damageMultiplier;
+            };
+
+            const magicDamageForHit = (hitCount) => {
+                const hitSkillAttack = skill_attack * cannedAttackMultiplier(hitCount);
+                const hitMagicAttack = hitSkillAttack * magic_talent * skill2_magic_scale;
+                const baseMagic = Math.max(hitMagicAttack * (1 - resist_reduction), hitMagicAttack * 0.05) * (1 - enemy_reduce / 100);
+                const damageMultiplier = (1 + mag_vuln / 100) * (1 + mag_fragile / 100) * (1 + fragile / 100) * (1 + mag_other_mul / 100) * (1 + general_other_mul / 100);
+                return baseMagic * damageMultiplier * magicBonusMultiplier(hitCount);
+            };
+
+            let physical_damage = physicalDamageForHit(1);
             let magic_damage = magicDamageForHit(1);
 
             let single_hit_damage = physical_damage + magic_damage;
@@ -404,7 +482,8 @@
                         let hit_count = row * 4 + col + 1;
                         if (hit_count <= 1000) {
                             let current_armor = hit_count <= 15 ? enemy_armor + (2900 - (hit_count - 1) * 200) : enemy_armor;
-                            physical_damage = Math.max(skill_attack - current_armor, skill_attack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + phy_vuln / 100);
+                            const hitSkillAttack = skill_attack * cannedAttackMultiplier(hit_count);
+                            physical_damage = Math.max(hitSkillAttack - current_armor, hitSkillAttack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + phy_vuln / 100);
                             magic_damage = magicDamageForHit(hit_count);
                             single_hit_damage = physical_damage + magic_damage;
                             cumulative_damage += single_hit_damage;

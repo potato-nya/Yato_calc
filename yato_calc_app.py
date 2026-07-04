@@ -50,7 +50,7 @@ def _round_half_up(value: float) -> int:
 # 创建主窗口
 root = tk.Tk()
 root.title("夜刀计算器")
-root.geometry("1280x1200")
+root.geometry("1300x1200")
 
 # 设置窗口图标（如果存在 assets/icon.ico）并兼容 PyInstaller 运行环境
 def _resource_path(relative_path: str) -> str:
@@ -81,23 +81,13 @@ else:
     font_family = ("Arial", 8)  # 备用字体
 
 # 创建标签和输入框
-fields = [
-    ("白值增益", "base_bonus"),
-    ("最终乘算%", "final_mul"),
-    ("局外加攻%", "out_attack"),
-    ("局内加攻%（乘算）", "in_attack_mul"),
-    ("局内加攻（加算）", "in_attack_add"),
-    ("物理易伤%", "phy_vuln"),
-    ("法术易伤%", "mag_vuln"),
-    ("脆弱%", "fragile"),
-    ("敌方护甲", "enemy_armor"),
-    ("敌方法抗", "enemy_resist"),
-    ("敌方减伤%", "enemy_reduce"),
-    # 新增：攻速、再部署时间（可为正负，支持小数）
-    ("攻速", "attack_speed"),
-    ("落地攻速", "landing_attack_speed"),
-    ("再部署时间", "redeploy_time"),
-    ("每次技能段数", "skill_segments"),
+field_groups = [
+    ("增益效果", [("白值增益", "base_bonus"), ("局外加攻%", "out_attack"), ("局内加攻%（乘算）", "in_attack_mul"), ("局内加攻（加算）", "in_attack_add"), ("最终乘算%", "final_mul"), ("攻速加成", "attack_speed")]),
+    ("物理乘区", [("敌方护甲", "enemy_armor"), ("物理易伤%", "phy_vuln"), ("物理脆弱%", "phy_fragile"), ("其他乘区（物理）%", "phy_other_mul")]),
+    ("法术乘区", [("敌方法抗", "enemy_resist"), ("法术易伤%", "mag_vuln"), ("法术脆弱%", "mag_fragile"), ("其他乘区（法术）%", "mag_other_mul")]),
+    ("通用乘区", [("脆弱%", "fragile"), ("敌方减伤%", "enemy_reduce"), ("其他乘区（通用）%", "general_other_mul")]),
+    ("部署信息", [("再部署时间", "redeploy_time"), ("每次段数", "skill_segments")]),
+    ("临时增益", [("落地攻速", "landing_attack_speed"), ("罐头类加攻%", "canned_attack")]),
 ]
 
 # 设置主窗口背景色
@@ -108,23 +98,41 @@ input_labelframe = tk.LabelFrame(root, text="参数输入：带有%的为百分�
 input_labelframe.pack(pady=10, fill=tk.X, padx=20)
 
 input_frame = tk.Frame(input_labelframe, bg="#f5f5f5")
-input_frame.pack()
+input_frame.pack(fill=tk.BOTH, expand=True)
 
 entries = {}
-for idx, (label_text, var_name) in enumerate(fields):
-    row = idx // 3
-    col = idx % 3
-    label = tk.Label(input_frame, text=label_text, anchor='e', font=font_family, bg="#f5f5f5")
-    label.grid(row=row, column=col*2, padx=(10, 2), pady=8, sticky='e')
-    entry = tk.Entry(input_frame, width=12, justify='left', font=font_family)
-    if var_name == "skill_segments":
-        entry.insert(0, "16")
-    elif var_name == "final_mul":
-        entry.insert(0, "100")
-    else:
-        entry.insert(0, "0")
-    entry.grid(row=row, column=col*2+1, padx=(2, 18), pady=8, sticky='w')
-    entries[var_name] = entry
+positions = [(0, 0), (1, 0), (1, 1), (0, 1), (2, 0), (2, 1)]
+for group_idx, (title, group_fields) in enumerate(field_groups):
+    row, col = positions[group_idx]
+    group_frame = tk.LabelFrame(input_frame, text=title, font=("黑体", 9, "bold"), bg="#f5f5f5", padx=8, pady=8)
+    group_frame.grid(row=row, column=col, padx=8, pady=8, sticky='nsew')
+    input_frame.grid_columnconfigure(col, weight=1)
+    input_frame.grid_rowconfigure(row, weight=1)
+    for c in range(4):
+        group_frame.columnconfigure(c, weight=1, minsize=120)
+    for r in range(2):
+        group_frame.rowconfigure(r, weight=1)
+
+    for item_idx, (label_text, var_name) in enumerate(group_fields):
+        item_row = item_idx // 2
+        item_col = item_idx % 2
+        if var_name == "general_other_mul":
+            item_row = 1
+            item_col = 1
+
+        label_col = item_col * 2
+        entry_col = label_col + 1
+        label = tk.Label(group_frame, text=label_text, anchor='e', font=font_family, bg="#f5f5f5")
+        label.grid(row=item_row, column=label_col, padx=(8, 4), pady=6, sticky='e')
+        entry = tk.Entry(group_frame, width=14, justify='left', font=font_family)
+        if var_name == "skill_segments":
+            entry.insert(0, "16")
+        elif var_name == "final_mul":
+            entry.insert(0, "100")
+        else:
+            entry.insert(0, "0")
+        entry.grid(row=item_row, column=entry_col, padx=(4, 8), pady=6, sticky='ew')
+        entries[var_name] = entry
 
 # 技能与选项区美化
 skill_frame = tk.Frame(root, bg="#f5f5f5")
@@ -338,7 +346,7 @@ def compute_skill1_timeline(raw_attack_speed: float, is_j1: bool, landing_as: fl
         - 前9秒（<=270帧）使用 n1 = base + raw + landing_as
         - 9秒后（后11秒）使用 n2 = base + raw
     """
-    base = 170 if is_j1 else 200
+    base = 100
     
     # 辅助简单的四舍五入函数 (x.5 向上取整)
     def round_half_up(n):
@@ -515,8 +523,14 @@ def calculate_attack(*args):
         in_attack_mul = float(entries['in_attack_mul'].get())
         in_attack_add = float(entries['in_attack_add'].get())
         phy_vuln = float(entries['phy_vuln'].get())
+        phy_fragile = float(entries['phy_fragile'].get())
         mag_vuln = float(entries['mag_vuln'].get())
+        mag_fragile = float(entries['mag_fragile'].get())
         fragile = float(entries['fragile'].get())
+        canned_attack = float(entries['canned_attack'].get())
+        phy_other_mul = float(entries['phy_other_mul'].get())
+        mag_other_mul = float(entries['mag_other_mul'].get())
+        general_other_mul = float(entries['general_other_mul'].get())
         enemy_armor = float(entries['enemy_armor'].get())
         enemy_resist = float(entries['enemy_resist'].get())
         enemy_reduce = float(entries['enemy_reduce'].get())
@@ -619,15 +633,44 @@ def calculate_attack(*args):
             bonus_pct = min(max(cycle_hit - 1, 0), 10) * 0.05
             return 1.0 + bonus_pct
 
+        def canned_attack_multiplier(hit_count: int) -> float:
+            if skill_selected != "二技能":
+                return 1.0
+            cycle_hit = ((hit_count - 1) % skill_segments) + 1
+            if cycle_hit == 1:
+                return 1.0 + canned_attack / 100
+            return 1.0
+
+        def physical_damage_for_hit(hit_count: int) -> float:
+            hit_skill_attack = skill_attack * canned_attack_multiplier(hit_count)
+            base_physical = max(hit_skill_attack - enemy_armor, hit_skill_attack * 0.05) * (1 - enemy_reduce/100)
+            damage_mult = (
+                (1 + phy_vuln / 100)
+                * (1 + phy_fragile / 100)
+                * (1 + fragile / 100)
+                * (1 + phy_other_mul / 100)
+                * (1 + general_other_mul / 100)
+            )
+            return base_physical * damage_mult
+
         def magic_damage_for_hit(hit_count: int) -> float:
-            base_magic = max(magic_attack * (1 - resist_reduction), magic_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + mag_vuln / 100)
+            hit_skill_attack = skill_attack * canned_attack_multiplier(hit_count)
+            hit_magic_attack = hit_skill_attack * magic_talent * skill2_magic_scale
+            base_magic = max(hit_magic_attack * (1 - resist_reduction), hit_magic_attack * 0.05) * (1 - enemy_reduce/100)
+            damage_mult = (
+                (1 + mag_vuln / 100)
+                * (1 + mag_fragile / 100)
+                * (1 + fragile / 100)
+                * (1 + mag_other_mul / 100)
+                * (1 + general_other_mul / 100)
+            )
             # 独立乘区在算式最后额外乘上去
-            return base_magic * magic_bonus_multiplier(hit_count)
+            return base_magic * damage_mult * magic_bonus_multiplier(hit_count)
         
         # 如果没有选择戈渎，使用原有的单次伤害计算方式
         if not is_gd:
             # 计算物理伤害
-            physical_damage = max(skill_attack - enemy_armor, skill_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + phy_vuln / 100)
+            physical_damage = physical_damage_for_hit(1)
             # 单次面板显示按第1次攻击计算
             magic_damage = magic_damage_for_hit(1)
             
@@ -648,8 +691,9 @@ def calculate_attack(*args):
                 for col in range(4):
                     hit_count = row * 4 + col + 1
                     if hit_count <= 1000:
+                        current_physical_damage = physical_damage_for_hit(hit_count)
                         current_magic_damage = magic_damage_for_hit(hit_count)
-                        current_single_hit = physical_damage + current_magic_damage
+                        current_single_hit = current_physical_damage + current_magic_damage
                         cumulative_damage += current_single_hit
                         if cumulative_damage >= 1000000:
                             line_parts.append(f"{hit_count:3d}次:{int(round(cumulative_damage)):>9d}")
@@ -681,7 +725,8 @@ def calculate_attack(*args):
                             # 第16次及以后：正常防御
                             current_armor = enemy_armor
                           # 计算当前攻击的伤害
-                        current_physical_damage = max(skill_attack - current_armor, skill_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + phy_vuln / 100)
+                        hit_skill_attack = skill_attack * canned_attack_multiplier(hit_count)
+                        current_physical_damage = max(hit_skill_attack - current_armor, hit_skill_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + phy_vuln / 100)
                         current_magic_damage = magic_damage_for_hit(hit_count)
                         current_single_hit = current_physical_damage + current_magic_damage
                         
@@ -917,7 +962,8 @@ skill_level_var.trace_add('write', calculate_attack)
 
 # 添加底部署名
 footer_label = tk.Label(root, text="KirinRYatoCalc by potatonya", font=("黑体", 9), fg="#161616", bg="#f5f5f5")
-footer_label.pack(side=tk.BOTTOM, pady=3)
+footer_label.pack(side=tk.BOTTOM, pady=1)
+footer_label.configure(height=1)
 
 # 运行主循环
 root.mainloop()
