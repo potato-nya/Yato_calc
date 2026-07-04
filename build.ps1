@@ -37,9 +37,9 @@ function Invoke-PipInstall {
     if ($LASTEXITCODE -ne 0) { throw 'pip install failed' }
 }
 
-Write-Host '[2/4] Installing/upgrading build deps (setuptools, wheel, pyinstaller)...'
+Write-Host '[2/4] Installing/upgrading build deps (setuptools, wheel, pyinstaller, backports.tarfile)...'
 try {
-    Invoke-PipInstall -Packages @('setuptools','wheel')
+    Invoke-PipInstall -Packages @('setuptools','wheel','backports.tarfile')
 } catch {
     Write-Error $_; exit 1
 }
@@ -68,6 +68,9 @@ Write-Host '[3/4] Running PyInstaller...'
 $argsList = @('--noconfirm', '--clean', '--name', $Name)
 if ($OneFile) { $argsList += '--onefile' } else { $argsList += '--onedir' }
 if ($Windowed) { $argsList += '--windowed' }
+$argsList += @('--hidden-import', 'backports.tarfile')
+$argsList += @('--hidden-import', 'jaraco.context')
+$argsList += @('--hidden-import', 'jaraco.text')
 
 # 入口脚本
 $argsList += 'yato_calc_app.py'
@@ -132,9 +135,9 @@ if ($iconToUse -and (Test-Path $iconToUse)) {
 }
 
 # 打包默认背景图
-$bgDir = (Join-Path $PSScriptRoot 'assets\backgrounds')
-if (Test-Path $bgDir) {
-    $argsList += @('--add-data', ("{0};assets/backgrounds" -f $bgDir))
+$rootBgDir = (Join-Path $PSScriptRoot 'backgrounds')
+if (Test-Path $rootBgDir) {
+    $argsList += @('--add-data', ("{0};backgrounds" -f $rootBgDir))
 }
 
 # 执行打包

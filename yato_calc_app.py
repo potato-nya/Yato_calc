@@ -9,11 +9,17 @@ except Exception:
         pass
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 import tkinter.font as tkFont
 import math
 import os
 import sys
+
+try:
+    from PIL import Image, ImageTk
+except ImportError:
+    Image = None
+    ImageTk = None
 
 # v3.2 技能等级参数表（请按实际数据调整）
 # 说明：
@@ -42,6 +48,60 @@ def _skill_param_by_level(param_map, level):
         return param_map[level]
     return param_map[max(param_map.keys())]
 
+def _get_background_dir():
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(os.path.abspath(sys.executable))
+        target_dir = os.path.join(base_dir, 'backgrounds')
+        os.makedirs(target_dir, exist_ok=True)
+        return target_dir
+
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    candidate_dirs = [
+        os.path.join(base_dir, 'backgrounds'),
+        os.path.join(base_dir, 'assets', 'backgrounds'),
+        os.path.join(os.path.abspath(os.getcwd()), 'backgrounds'),
+    ]
+    for directory in candidate_dirs:
+        if os.path.isdir(directory):
+            return directory
+    os.makedirs(candidate_dirs[0], exist_ok=True)
+    return candidate_dirs[0]
+
+BACKGROUND_DIR = _get_background_dir()
+DEFAULT_BACKGROUND_NAME = "light_gradient.png"
+BACKGROUND_FILES = []
+if os.path.isdir(BACKGROUND_DIR):
+    for filename in sorted(os.listdir(BACKGROUND_DIR)):
+        if filename.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
+            BACKGROUND_FILES.append(os.path.join(BACKGROUND_DIR, filename))
+
+DEFAULT_BACKGROUND_PATH = os.path.join(BACKGROUND_DIR, DEFAULT_BACKGROUND_NAME)
+if not os.path.exists(DEFAULT_BACKGROUND_PATH):
+    DEFAULT_BACKGROUND_PATH = None
+
+if DEFAULT_BACKGROUND_PATH is None and BACKGROUND_FILES:
+    DEFAULT_BACKGROUND_PATH = BACKGROUND_FILES[0]
+
+
+def _load_background_photo(path: str, size=None):
+    if not path or not os.path.exists(path):
+        return None
+    if Image is not None and ImageTk is not None:
+        try:
+            image = Image.open(path)
+            if image.mode != "RGBA":
+                image = image.convert("RGBA")
+            if size:
+                image = image.resize(size, Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS)
+            return ImageTk.PhotoImage(image)
+        except Exception:
+            pass
+    try:
+        return tk.PhotoImage(file=path)
+    except Exception:
+        return None
+
+
 def _round_half_up(value: float) -> int:
     if value >= 0:
         return int(math.floor(value + 0.5))
@@ -49,8 +109,8 @@ def _round_half_up(value: float) -> int:
 
 # 创建主窗口
 root = tk.Tk()
-root.title("夜刀计算器")
-root.geometry("1300x1200")
+root.title("夜刀计算器 v4.0")
+root.geometry("1200x1350")
 
 # 设置窗口图标（如果存在 assets/icon.ico）并兼容 PyInstaller 运行环境
 def _resource_path(relative_path: str) -> str:
@@ -93,18 +153,117 @@ field_groups = [
 # 设置主窗口背景色
 root.configure(bg="#f5f5f5")
 
+content_area_frame = tk.Frame(root, bg="#f7f9fc")
+content_area_frame.pack(fill=tk.BOTH, expand=True)
+root._content_area_frame = content_area_frame
+
+background_label = tk.Label(content_area_frame, bg="#f7f9fc")
+background_label.place(x=0, y=0, relwidth=1, relheight=1)
+background_label.lower()
+root._background_label = background_label
+root._background_path = DEFAULT_BACKGROUND_PATH
+root._background_candidates = BACKGROUND_FILES
+root._background_index = 0
+if root._background_path in root._background_candidates:
+    root._background_index = root._background_candidates.index(root._background_path)
+
+
+def refresh_background(event=None):
+    if not getattr(root, "_background_path", None):
+        return
+    container = getattr(root, "_content_area_frame", None)
+    if container is None:
+        return
+    width = max(1, container.winfo_width())
+    height = max(1, container.winfo_height())
+    photo = _load_background_photo(root._background_path, size=(width, height))
+    if photo is None:
+        return
+    background_label.configure(image=photo)
+    background_label.image = photo
+
+
+def set_background(path=None):
+    if path is None:
+        path = DEFAULT_BACKGROUND_PATH
+    if not path or not os.path.exists(path):
+        return
+    root._background_path = path
+    refresh_background()
+
+
+def choose_background():
+    path = filedialog.askopenfilename(
+        title="选择背景图片",
+        filetypes=[("图片文件", "*.png *.jpg *.jpeg *.bmp *.gif"), ("所有文件", "*.*")],
+    )
+    if path:
+        filename = os.path.basename(path)
+        target_path = os.path.join(BACKGROUND_DIR, filename)
+        if os.path.abspath(path) != os.path.abspath(target_path):
+            try:
+                import shutil
+                shutil.copy2(path, target_path)
+            except Exception:
+                target_path = path
+        if os.path.exists(target_path):
+            if target_path not in root._background_candidates:
+                root._background_candidates.append(target_path)
+            set_background(target_path)
+            messagebox.showinfo("背景图已更新", "已成功保存并切换到新背景图。")
+
+
+def switch_background():
+    candidates = getattr(root, "_background_candidates", [])
+    if not candidates:
+        return
+    current_path = getattr(root, "_background_path", None)
+    if current_path in candidates:
+        next_index = (candidates.index(current_path) + 1) % len(candidates)
+    else:
+        next_index = 0
+    set_background(candidates[next_index])
+    root._background_index = next_index
+
+
+bg_controls_frame = tk.Frame(root, bg="#f7f7f7")
+bg_controls_frame.pack(pady=(10, 0), padx=20, anchor="e")
+
+bg_switch_button = tk.Button(bg_controls_frame, text="切换背景", command=switch_background, font=font_family)
+bg_switch_button.pack(side=tk.RIGHT, padx=(0, 6))
+
+bg_default_button = tk.Button(bg_controls_frame, text="默认背景", command=lambda: set_background(DEFAULT_BACKGROUND_PATH), font=font_family)
+bg_default_button.pack(side=tk.RIGHT, padx=(0, 6))
+
+bg_upload_button = tk.Button(bg_controls_frame, text="上传图片", command=choose_background, font=font_family)
+bg_upload_button.pack(side=tk.RIGHT)
+
+root.bind("<Configure>", refresh_background)
+set_background(DEFAULT_BACKGROUND_PATH)
+
 # 输入区美化
-input_labelframe = tk.LabelFrame(root, text="参数输入：带有%的为百分比", font=("黑体", 10, "bold"), bg="#f5f5f5", padx=10, pady=10, labelanchor='nw')
+input_labelframe = tk.LabelFrame(
+    content_area_frame,
+    text="参数输入：带有%的为百分比",
+    font=("黑体", 10, "bold"),
+    bg="#f8fbff",
+    fg="#4a4a4a",
+    padx=10,
+    pady=10,
+    labelanchor='nw',
+    highlightthickness=1,
+    highlightbackground="#d8e3f0",
+)
 input_labelframe.pack(pady=10, fill=tk.X, padx=20)
 
-input_frame = tk.Frame(input_labelframe, bg="#f5f5f5")
+input_frame = tk.Frame(input_labelframe, bg="#f8fbff")
 input_frame.pack(fill=tk.BOTH, expand=True)
 
 entries = {}
 positions = [(0, 0), (1, 0), (1, 1), (0, 1), (2, 0), (2, 1)]
 for group_idx, (title, group_fields) in enumerate(field_groups):
     row, col = positions[group_idx]
-    group_frame = tk.LabelFrame(input_frame, text=title, font=("黑体", 9, "bold"), bg="#f5f5f5", padx=8, pady=8)
+    group_frame = tk.LabelFrame(input_frame, text=title, font=("黑体", 9, "bold"), bg="#f9fcff", padx=8, pady=8)
     group_frame.grid(row=row, column=col, padx=8, pady=8, sticky='nsew')
     input_frame.grid_columnconfigure(col, weight=1)
     input_frame.grid_rowconfigure(row, weight=1)
@@ -122,7 +281,7 @@ for group_idx, (title, group_fields) in enumerate(field_groups):
 
         label_col = item_col * 2
         entry_col = label_col + 1
-        label = tk.Label(group_frame, text=label_text, anchor='e', font=font_family, bg="#f5f5f5")
+        label = tk.Label(group_frame, text=label_text, anchor='e', font=font_family, bg="#f9fcff")
         label.grid(row=item_row, column=label_col, padx=(8, 4), pady=6, sticky='e')
         entry = tk.Entry(group_frame, width=14, justify='left', font=font_family)
         if var_name == "skill_segments":
@@ -135,16 +294,16 @@ for group_idx, (title, group_fields) in enumerate(field_groups):
         entries[var_name] = entry
 
 # 技能与选项区美化
-skill_frame = tk.Frame(root, bg="#f5f5f5")
+skill_frame = tk.Frame(content_area_frame, bg="#f7f9fc")
 skill_frame.pack(pady=10)
-skill_label = tk.Label(skill_frame, text="选择技能:", font=font_family, bg="#f5f5f5")
+skill_label = tk.Label(skill_frame, text="选择技能:", font=font_family, bg="#f7f9fc")
 skill_label.pack(side=tk.LEFT, padx=(0, 5))
 skill_var = tk.StringVar(value="一技能")
 skill_dropdown = tk.OptionMenu(skill_frame, skill_var, "一技能", "二技能", "三技能")
 skill_dropdown.config(font=font_family)
 skill_dropdown.pack(side=tk.LEFT, padx=(0, 15))
 
-skill_level_label = tk.Label(skill_frame, text="技能等级:", font=font_family, bg="#f5f5f5")
+skill_level_label = tk.Label(skill_frame, text="技能等级:", font=font_family, bg="#f7f9fc")
 skill_level_label.pack(side=tk.LEFT, padx=(0, 5))
 skill_level_var = tk.StringVar(value="10")
 skill_level_dropdown = tk.OptionMenu(skill_frame, skill_level_var, "10")
@@ -165,8 +324,8 @@ y_solo_check = tk.Checkbutton(
     font=("黑体", 9),
     width=10,
     height=1,
-    bg="#f5f5f5",
-    activebackground="#f5f5f5"
+    bg="#f7f9fc",
+    activebackground="#f7f9fc"
 )
 y_solo_check.pack(side=tk.LEFT, padx=8)
 
@@ -201,50 +360,50 @@ module_var.trace_add('write', update_module_controls)
 update_module_controls()
 update_skill_level_options()
 
-j1_check = tk.Checkbutton(skill_frame, text="精一", variable=j1_var, font=("黑体", 9), width=8, height=1, bg="#f5f5f5", activebackground="#f5f5f5")
+j1_check = tk.Checkbutton(skill_frame, text="精一", variable=j1_var, font=("黑体", 9), width=8, height=1, bg="#f7f9fc", activebackground="#f7f9fc")
 j1_check.pack(side=tk.LEFT, padx=8)
 
 gd_var = tk.BooleanVar()
-gd_check = tk.Checkbutton(skill_frame, text="戈渎", variable=gd_var, font=("黑体", 9), width=8, height=1, bg="#f5f5f5", activebackground="#f5f5f5")
+gd_check = tk.Checkbutton(skill_frame, text="戈渎", variable=gd_var, font=("黑体", 9), width=8, height=1, bg="#f7f9fc", activebackground="#f7f9fc")
 gd_check.pack(side=tk.LEFT, padx=8)
 
 # 中部左右分栏容器：左侧（结果与累计表），右侧（时间轴）
-content_frame = tk.Frame(root, bg="#f5f5f5")
+content_frame = tk.Frame(content_area_frame, bg="#f7f9fc")
 content_frame.pack(pady=5, fill=tk.BOTH, expand=True)
 
-left_col = tk.Frame(content_frame, bg="#f5f5f5")
+left_col = tk.Frame(content_frame, bg="#f7f9fc")
 left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(20, 10))
 
-right_col = tk.Frame(content_frame, bg="#f5f5f5", width=560)
+right_col = tk.Frame(content_frame, bg="#f7f9fc", width=560)
 right_col.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 20))
 right_col.pack_propagate(False)
 
 # 输出区美化
-attack_labelframe = tk.LabelFrame(left_col, text="单次伤害结果", font=("黑体", 10, "bold"), bg="#f5f5f5", padx=10, pady=10, labelanchor='nw')
+attack_labelframe = tk.LabelFrame(left_col, text="单次伤害结果", font=("黑体", 10, "bold"), bg="#f8fbff", padx=10, pady=10, labelanchor='nw')
 attack_labelframe.pack(pady=10, fill=tk.X)
 
-attack_frame = tk.Frame(attack_labelframe, bg="#f5f5f5")
+attack_frame = tk.Frame(attack_labelframe, bg="#f8fbff")
 attack_frame.pack()
-attack_label = tk.Label(attack_frame, text="攻击力: 0", font=("黑体", 11, "bold"), anchor='w', bg="#f5f5f5")
+attack_label = tk.Label(attack_frame, text="攻击力: 0", font=("黑体", 11, "bold"), anchor='w', bg="#f8fbff")
 attack_label.pack(anchor='w')
 
-skill_attack_label = tk.Label(attack_frame, text="技能攻击力: 0.00", font=("黑体", 10), anchor='w', bg="#f5f5f5")
+skill_attack_label = tk.Label(attack_frame, text="技能攻击力: 0.00", font=("黑体", 10), anchor='w', bg="#f8fbff")
 skill_attack_label.pack(anchor='w')
 
-physical_damage_label = tk.Label(attack_frame, text="物理伤害: 0.00", font=("黑体", 10), anchor='w', bg="#f5f5f5")
+physical_damage_label = tk.Label(attack_frame, text="物理伤害: 0.00", font=("黑体", 10), anchor='w', bg="#f8fbff")
 physical_damage_label.pack(anchor='w')
 
-magic_damage_label = tk.Label(attack_frame, text="法术伤害: 0.00", font=("黑体", 10), anchor='w', bg="#f5f5f5")
+magic_damage_label = tk.Label(attack_frame, text="法术伤害: 0.00", font=("黑体", 10), anchor='w', bg="#f8fbff")
 magic_damage_label.pack(anchor='w')
 
-single_hit_label = tk.Label(attack_frame, text="单次总伤: 0.00", font=("黑体", 11, "bold"), anchor='w', bg="#f5f5f5")
+single_hit_label = tk.Label(attack_frame, text="单次总伤: 0.00", font=("黑体", 11, "bold"), anchor='w', bg="#f8fbff")
 single_hit_label.pack(anchor='w', pady=(0, 2))
 
 # 累计伤害表美化
-cumulative_labelframe = tk.LabelFrame(left_col, text="累计伤害表", font=("黑体", 10, "bold"), bg="#f5f5f5", padx=10, pady=10, labelanchor='nw')
+cumulative_labelframe = tk.LabelFrame(left_col, text="累计伤害表", font=("黑体", 10, "bold"), bg="#f8fbff", padx=10, pady=10, labelanchor='nw')
 cumulative_labelframe.pack(pady=10, fill=tk.BOTH, expand=True)
 
-cumulative_title = tk.Label(cumulative_labelframe, text="累计伤害表格 (法伤+物伤):", font=("黑体", 10, "bold"), bg="#f5f5f5")
+cumulative_title = tk.Label(cumulative_labelframe, text="累计伤害表格 (法伤+物伤):", font=("黑体", 10, "bold"), bg="#f8fbff")
 cumulative_title.pack(anchor='w')
 
 # 表格加滚动条
@@ -253,7 +412,7 @@ cumulative_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 cumulative_damage_text = tk.Text(
     cumulative_labelframe,
     font=("Consolas", 9),
-    bg="#f5f5f5",
+    bg="#f8fbff",
     height=18,
     wrap=tk.NONE,
     yscrollcommand=cumulative_scroll.set,
@@ -263,7 +422,7 @@ cumulative_damage_text.pack(fill=tk.BOTH, expand=True)
 cumulative_scroll.config(command=cumulative_damage_text.yview)
 
 # 时间轴参考视图
-timeline_labelframe = tk.LabelFrame(right_col, text="时间轴参考", font=("黑体", 10, "bold"), bg="#f5f5f5", padx=10, pady=10, labelanchor='nw')
+timeline_labelframe = tk.LabelFrame(right_col, text="时间轴参考", font=("黑体", 10, "bold"), bg="#f8fbff", padx=10, pady=10, labelanchor='nw')
 timeline_labelframe.pack(pady=10, fill=tk.BOTH, expand=True)
 
 timeline_scroll = tk.Scrollbar(timeline_labelframe)
@@ -272,7 +431,7 @@ timeline_hscroll = tk.Scrollbar(timeline_labelframe, orient=tk.HORIZONTAL)
 timeline_text = tk.Text(
     timeline_labelframe,
     font=("Consolas", 9),
-    bg="#f5f5f5",
+    bg="#f8fbff",
     height=10,
     wrap=tk.NONE,
     yscrollcommand=timeline_scroll.set,
@@ -961,9 +1120,10 @@ gd_var.trace_add('write', calculate_attack)
 skill_level_var.trace_add('write', calculate_attack)
 
 # 添加底部署名
-footer_label = tk.Label(root, text="KirinRYatoCalc by potatonya", font=("黑体", 9), fg="#161616", bg="#f5f5f5")
-footer_label.pack(side=tk.BOTTOM, pady=1)
-footer_label.configure(height=1)
+footer_frame = tk.Frame(root, bg="#f7f7f7")
+footer_frame.pack(side=tk.BOTTOM, fill=tk.X)
+footer_label = tk.Label(footer_frame, text="KirinRYatoCalc by potatonya", font=("黑体", 9), fg="#161616", bg="#f7f7f7")
+footer_label.pack(pady=3)
 
 # 运行主循环
 root.mainloop()
