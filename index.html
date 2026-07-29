@@ -732,7 +732,7 @@
 
         // JS版本的一技能时间轴（含9秒/11秒分段与封顶）
         function computeSkill1Timeline(rawAttackSpeed, isJ1, landingAS = 0, maxFrames = 600) {
-            const base = isJ1 ? 170 : 200;
+            const base = 100;
             // 辅助四舍五入 (x.5 向上)
             const roundHalfUp = (n) => Math.floor(n + 0.5);
 
