@@ -291,6 +291,14 @@
                     <input type="checkbox" id="gd" name="gd" style="width: 20px; height: 20px;">
                     <label for="gd" style="margin: 0;">戈渎</label>
                 </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="ys_nan" name="ys_nan" style="width: 20px; height: 20px;">
+                    <label for="ys_nan" style="margin: 0;">移山难</label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="ys_fan" name="ys_fan" style="width: 20px; height: 20px;">
+                    <label for="ys_fan" style="margin: 0;">移山繁</label>
+                </div>
             </div>
             <button type="button" onclick="calculate()">计算</button>
         </form>
@@ -367,6 +375,8 @@
             const is_j1 = document.getElementById('j1').checked;
             const skill_selected = document.getElementById('skill').value;
             const is_gd = document.getElementById('gd').checked;
+            const ys_nan = document.getElementById('ys_nan').checked;
+            const ys_fan = document.getElementById('ys_fan').checked;
             const module_selected = document.getElementById('module').value;
             const y_solo = document.getElementById('y_solo').checked;
 
@@ -450,9 +460,26 @@
                 return 1.0;
             };
 
+            const currentArmorForHit = (hitCount) => {
+                // 戈渎：+3000 每次受伤-100，至多30次后恢复正常，防御加成最低为0，不削减基础防御
+                if (is_gd) {
+                    return hitCount <= 15 ? enemy_armor + (2900 - (hitCount - 1) * 200) : enemy_armor;
+                }
+                // 移山难/繁：+2000 各，每次受伤 -100/-150，至多25次；
+                // 加成可降为负值去削减基础防御，但最终结算防御不低于0
+                if (ys_nan || ys_fan) {
+                    const added = (ys_nan ? 2000 : 0) + (ys_fan ? 2000 : 0);
+                    const perHit = (ys_nan ? 100 : 0) + (ys_fan ? 150 : 0);
+                    const reductions = Math.min(2 * hitCount - 1, 25);
+                    return Math.max(enemy_armor + added - perHit * reductions, 0);
+                }
+                return enemy_armor;
+            };
+
             const physicalDamageForHit = (hitCount) => {
                 const hitSkillAttack = skill_attack * cannedAttackMultiplier(hitCount);
-                const basePhysical = Math.max(hitSkillAttack - enemy_armor, hitSkillAttack * 0.05) * (1 - enemy_reduce / 100);
+                const armor = currentArmorForHit(hitCount);
+                const basePhysical = Math.max(hitSkillAttack - armor, hitSkillAttack * 0.05) * (1 - enemy_reduce / 100);
                 const damageMultiplier = (1 + phy_vuln / 100) * (1 + phy_fragile / 100) * (1 + fragile / 100) * (1 + phy_other_mul / 100) * (1 + general_other_mul / 100);
                 return basePhysical * damageMultiplier;
             };
@@ -481,7 +508,7 @@
                     for (let col = 0; col < 4; col++) {
                         let hit_count = row * 4 + col + 1;
                         if (hit_count <= 1000) {
-                            let current_armor = hit_count <= 15 ? enemy_armor + (2900 - (hit_count - 1) * 200) : enemy_armor;
+                            let current_armor = currentArmorForHit(hit_count);
                             const hitSkillAttack = skill_attack * cannedAttackMultiplier(hit_count);
                             physical_damage = Math.max(hitSkillAttack - current_armor, hitSkillAttack * 0.05) * (1 - enemy_reduce / 100) * (1 + fragile / 100) * (1 + phy_vuln / 100);
                             magic_damage = magicDamageForHit(hit_count);
@@ -886,6 +913,23 @@
             }
         }
 
+        function updateGdExclusive(changedEl) {
+            const gd = document.getElementById('gd');
+            const ysNan = document.getElementById('ys_nan');
+            const ysFan = document.getElementById('ys_fan');
+            if (!gd || !ysNan || !ysFan) return;
+            if (changedEl === gd) {
+                // 勾上戈渎时，关闭移山难/繁
+                if (gd.checked) {
+                    ysNan.checked = false;
+                    ysFan.checked = false;
+                }
+            } else if (changedEl === ysNan || changedEl === ysFan) {
+                // 勾上移山难/繁时，关闭戈渎
+                if ((ysNan.checked || ysFan.checked) && gd.checked) gd.checked = false;
+            }
+        }
+
         function updateSkillLevelOptions() {
             const isJ1 = document.getElementById('j1').checked;
             const skillLevelSel = document.getElementById('skill_level');
@@ -913,10 +957,16 @@
             const j1 = document.getElementById('j1');
             const moduleSel = document.getElementById('module');
             const skillLevelSel = document.getElementById('skill_level');
+            const gd = document.getElementById('gd');
+            const ysNan = document.getElementById('ys_nan');
+            const ysFan = document.getElementById('ys_fan');
             if (j1) j1.addEventListener('change', updateModuleControls);
             if (j1) j1.addEventListener('change', updateSkillLevelOptions);
             if (moduleSel) moduleSel.addEventListener('change', updateModuleControls);
             if (skillLevelSel) skillLevelSel.addEventListener('change', calculate);
+            if (gd) gd.addEventListener('change', () => updateGdExclusive(gd));
+            if (ysNan) ysNan.addEventListener('change', () => updateGdExclusive(ysNan));
+            if (ysFan) ysFan.addEventListener('change', () => updateGdExclusive(ysFan));
             updateModuleControls();
             updateSkillLevelOptions();
         });

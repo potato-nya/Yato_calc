@@ -14,6 +14,7 @@ import tkinter.font as tkFont
 import math
 import os
 import sys
+import json
 
 try:
     from PIL import Image, ImageTk
@@ -67,8 +68,94 @@ def _get_background_dir():
     os.makedirs(candidate_dirs[0], exist_ok=True)
     return candidate_dirs[0]
 
+
+def _copy_default_backgrounds():
+    """背景目录为空时，尝试从打包资源或本地 assets 复制内置背景图。"""
+    try:
+        if os.listdir(BACKGROUND_DIR):
+            return
+    except Exception:
+        return
+    source_dir = None
+    try:
+        if getattr(sys, 'frozen', False):
+            source_dir = os.path.join(sys._MEIPASS, 'assets', 'backgrounds')  # type: ignore[attr-defined]
+        else:
+            source_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'backgrounds')
+    except Exception:
+        pass
+    if not source_dir or not os.path.isdir(source_dir):
+        return
+    import shutil
+    for name in os.listdir(source_dir):
+        if name.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
+            try:
+                shutil.copy2(os.path.join(source_dir, name), os.path.join(BACKGROUND_DIR, name))
+            except Exception:
+                pass
+
+
+def _generate_default_background():
+    """背景目录缺失默认图时，生成一张浅色渐变默认图。"""
+    target = os.path.join(BACKGROUND_DIR, DEFAULT_BACKGROUND_NAME)
+    try:
+        if os.path.exists(target) and os.path.getsize(target) > 0:
+            return
+    except Exception:
+        return
+    if Image is None:
+        return
+    try:
+        width, height = 1600, 900
+        top = (0xEE, 0xF5, 0xFB)
+        bottom = (0xDD, 0xEE, 0xE8)
+        grad = Image.new("RGB", (1, height))
+        for y in range(height):
+            t = y / (height - 1)
+            grad.putpixel((0, y), tuple(int(top[i] * (1 - t) + bottom[i] * t) for i in range(3)))
+        resample = Image.Resampling.BILINEAR if hasattr(Image, "Resampling") else Image.BILINEAR
+        grad.resize((width, height), resample).save(target)
+    except Exception:
+        pass
+
+
+def _ensure_default_backgrounds():
+    """首次启动时确保背景目录存在且有可用默认背景。"""
+    try:
+        os.makedirs(BACKGROUND_DIR, exist_ok=True)
+    except Exception:
+        return
+    _copy_default_backgrounds()
+    _generate_default_background()
+
+
+def _background_config_path():
+    return os.path.join(os.path.dirname(BACKGROUND_DIR), 'yato_calc_config.json')
+
+
+def _save_background_config(path):
+    try:
+        with open(_background_config_path(), 'w', encoding='utf-8') as f:
+            json.dump({"background": path}, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _load_saved_background():
+    try:
+        with open(_background_config_path(), 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        saved = data.get("background")
+        if saved and os.path.exists(saved):
+            return saved
+    except Exception:
+        pass
+    return DEFAULT_BACKGROUND_PATH
+
+
 BACKGROUND_DIR = _get_background_dir()
 DEFAULT_BACKGROUND_NAME = "light_gradient.png"
+_ensure_default_backgrounds()
 BACKGROUND_FILES = []
 if os.path.isdir(BACKGROUND_DIR):
     for filename in sorted(os.listdir(BACKGROUND_DIR)):
@@ -109,7 +196,7 @@ def _round_half_up(value: float) -> int:
 
 # 创建主窗口
 root = tk.Tk()
-root.title("夜刀计算器 v4.0")
+root.title("夜刀计算器 v4.1")
 root.geometry("1200x1350")
 
 # 设置窗口图标（如果存在 assets/icon.ico）并兼容 PyInstaller 运行环境
@@ -168,19 +255,165 @@ if root._background_path in root._background_candidates:
     root._background_index = root._background_candidates.index(root._background_path)
 
 
+def _get_original_background_image(path):
+    """加载并缓存背景原图（不缩放），返回 RGBA PIL 图像或 None。"""
+    if not path or not os.path.exists(path) or Image is None:
+        return None
+    cache = getattr(root, "_bg_orig_cache", None)
+    if cache and cache[0] == path:
+        return cache[1]
+    try:
+        image = Image.open(path)
+        if image.mode != "RGBA":
+            image = image.convert("RGBA")
+    except Exception:
+        image = None
+    root._bg_orig_cache = (path, image)
+    return image
+
+
+def _resize_background(orig, size):
+    """将原图缩放为 RGB，同时返回显示用的 PhotoImage 与采样用的 RGB 图（只缩放一次）。"""
+    if orig is None:
+        return None, None
+    try:
+        rgb = orig.convert("RGB")
+        resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+        rgb = rgb.resize(size, resample)
+        return ImageTk.PhotoImage(rgb), rgb
+    except Exception:
+        return None, None
+
+
+_BG_DEBOUNCE_MS = 80
+
+
 def refresh_background(event=None):
-    if not getattr(root, "_background_path", None):
+    """窗口尺寸变化（Configure）会高频触发；合并为一次延迟更新，避免反复全图缩放。"""
+    if getattr(root, "_bg_update_job", None) is not None:
+        try:
+            root.after_cancel(root._bg_update_job)
+        except Exception:
+            pass
+    root._bg_update_job = root.after(_BG_DEBOUNCE_MS, _do_background_update)
+
+
+def _do_background_update():
+    root._bg_update_job = None
+    path = getattr(root, "_background_path", None)
+    if not path:
         return
     container = getattr(root, "_content_area_frame", None)
     if container is None:
         return
     width = max(1, container.winfo_width())
     height = max(1, container.winfo_height())
-    photo = _load_background_photo(root._background_path, size=(width, height))
+    if width < 50 or height < 50:
+        return
+    orig = _get_original_background_image(path)
+    photo, rgb = _resize_background(orig, (width, height))
+    if photo is None:
+        photo = _load_background_photo(path)
+        rgb = None
     if photo is None:
         return
+    root._background_pil_current = rgb
     background_label.configure(image=photo)
     background_label.image = photo
+    _schedule_sampling()
+
+
+_BG_SAMPLE_TARGETS = {"#f7f9fc", "#f8fbff", "#f9fcff"}
+
+
+def _schedule_sampling():
+    if getattr(root, "_sampling_pending", False):
+        return
+    root._sampling_pending = True
+
+    def _run():
+        root._sampling_pending = False
+        _apply_sampled_colors()
+
+    root.after_idle(_run)
+
+
+def _iter_content_widgets():
+    container = getattr(root, "_content_area_frame", None)
+    if container is None:
+        return
+    stack = [container]
+    while stack:
+        widget = stack.pop()
+        yield widget
+        stack.extend(widget.winfo_children())
+
+
+def _apply_sampled_colors():
+    """把输入区/结果区控件的实色背景替换为背景图对应位置的采样色。"""
+    container = getattr(root, "_content_area_frame", None)
+    bg_img = getattr(root, "_background_pil_current", None)
+    if container is None or bg_img is None:
+        return
+    try:
+        container.update_idletasks()
+    except Exception:
+        return
+    cw = container.winfo_width()
+    ch = container.winfo_height()
+    if cw < 50 or ch < 50:
+        return
+    base_x = container.winfo_rootx()
+    base_y = container.winfo_rooty()
+    img_w, img_h = bg_img.size
+    bg_label = getattr(root, "_background_label", None)
+    sampled = getattr(root, "_sampled_widgets", None)
+    if sampled is None:
+        sampled = set()
+        root._sampled_widgets = sampled
+    for widget in _iter_content_widgets():
+        if widget is bg_label or not isinstance(widget, (tk.Frame, tk.LabelFrame, tk.Label, tk.Entry, tk.Text, tk.Checkbutton)):
+            continue
+        try:
+            w = widget.winfo_width()
+            h = widget.winfo_height()
+            if w < 1 or h < 1:
+                continue
+            needs = isinstance(widget, tk.Entry) or widget in sampled
+            if not needs:
+                needs = str(widget.cget('bg')).lower() in _BG_SAMPLE_TARGETS
+            if not needs:
+                continue
+            sampled.add(widget)
+            cx = widget.winfo_rootx() - base_x + w // 2
+            cy = widget.winfo_rooty() - base_y + h // 2
+            px = min(max(int(round(cx * img_w / cw)), 0), img_w - 1)
+            py = min(max(int(round(cy * img_h / ch)), 0), img_h - 1)
+            rgb = bg_img.getpixel((px, py))[:3]
+        except Exception:
+            continue
+        hex_color = "#%02x%02x%02x" % rgb
+        luminance = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+        dark = luminance < 150
+        try:
+            widget.configure(bg=hex_color)
+        except Exception:
+            continue
+        if dark:
+            try:
+                widget.configure(fg="#ffffff")
+            except Exception:
+                pass
+            if isinstance(widget, tk.Entry):
+                try:
+                    widget.configure(insertbackground="#ffffff")
+                except Exception:
+                    pass
+        if isinstance(widget, tk.Checkbutton):
+            try:
+                widget.configure(activebackground=hex_color)
+            except Exception:
+                pass
 
 
 def set_background(path=None):
@@ -189,6 +422,7 @@ def set_background(path=None):
     if not path or not os.path.exists(path):
         return
     root._background_path = path
+    _save_background_config(path)
     refresh_background()
 
 
@@ -239,7 +473,7 @@ bg_upload_button = tk.Button(bg_controls_frame, text="上传图片", command=cho
 bg_upload_button.pack(side=tk.RIGHT)
 
 root.bind("<Configure>", refresh_background)
-set_background(DEFAULT_BACKGROUND_PATH)
+set_background(_load_saved_background())
 
 # 输入区美化
 input_labelframe = tk.LabelFrame(
@@ -363,9 +597,31 @@ update_skill_level_options()
 j1_check = tk.Checkbutton(skill_frame, text="精一", variable=j1_var, font=("黑体", 9), width=8, height=1, bg="#f7f9fc", activebackground="#f7f9fc")
 j1_check.pack(side=tk.LEFT, padx=8)
 
-gd_var = tk.BooleanVar()
+gd_var = tk.BooleanVar(name='gd_var')
 gd_check = tk.Checkbutton(skill_frame, text="戈渎", variable=gd_var, font=("黑体", 9), width=8, height=1, bg="#f7f9fc", activebackground="#f7f9fc")
 gd_check.pack(side=tk.LEFT, padx=8)
+
+ys_nan_var = tk.BooleanVar(name='ys_nan_var')
+ys_fan_var = tk.BooleanVar(name='ys_fan_var')
+ys_nan_check = tk.Checkbutton(skill_frame, text="移山难", variable=ys_nan_var, font=("黑体", 9), width=8, height=1, bg="#f7f9fc", activebackground="#f7f9fc")
+ys_nan_check.pack(side=tk.LEFT, padx=8)
+ys_fan_check = tk.Checkbutton(skill_frame, text="移山繁", variable=ys_fan_var, font=("黑体", 9), width=8, height=1, bg="#f7f9fc", activebackground="#f7f9fc")
+ys_fan_check.pack(side=tk.LEFT, padx=8)
+
+def update_gd_exclusive(*args):
+    """戈渎与移山难/繁互斥：移山难/繁可叠加，但任一侧开启时自动关闭戈渎。"""
+    changed = args[0] if args else ''
+    if changed == gd_var._name:
+        if gd_var.get():
+            ys_nan_var.set(False)
+            ys_fan_var.set(False)
+    elif changed in (ys_nan_var._name, ys_fan_var._name):
+        if (ys_nan_var.get() or ys_fan_var.get()) and gd_var.get():
+            gd_var.set(False)
+
+gd_var.trace_add('write', update_gd_exclusive)
+ys_nan_var.trace_add('write', update_gd_exclusive)
+ys_fan_var.trace_add('write', update_gd_exclusive)
 
 # 中部左右分栏容器：左侧（结果与累计表），右侧（时间轴）
 content_frame = tk.Frame(content_area_frame, bg="#f7f9fc")
@@ -765,6 +1021,8 @@ def calculate_attack(*args):
         skill_attack_label.config(text=f"技能攻击力: {skill_attack:.2f}")
           # 获取戈渎状态
         is_gd = gd_var.get()
+        ys_nan = ys_nan_var.get()
+        ys_fan = ys_fan_var.get()
         
         # 计算法术攻击力（用于后续法术伤害计算）
         # 二技能有额外的法伤倍率叠加，精一是2.1倍，精二是2.5倍
@@ -800,9 +1058,25 @@ def calculate_attack(*args):
                 return 1.0 + canned_attack / 100
             return 1.0
 
+        def current_armor_for_hit(hit_count: int) -> float:
+            # 戈渎：+3000 每次受伤-100，至多30次后恢复正常，防御加成最低为0，不削减基础防御
+            if is_gd:
+                if hit_count <= 15:
+                    return enemy_armor + (2900 - (hit_count - 1) * 200)
+                return enemy_armor
+            # 移山难/繁：+2000 各，每次受伤 -100/-150，至多25次；
+            # 加成可降为负值去削减基础防御，但最终结算防御不低于0
+            if ys_nan or ys_fan:
+                added = (2000 if ys_nan else 0) + (2000 if ys_fan else 0)
+                per_hit = (100 if ys_nan else 0) + (150 if ys_fan else 0)
+                reductions = min(2 * hit_count - 1, 25)
+                return max(enemy_armor + added - per_hit * reductions, 0)
+            return enemy_armor
+
         def physical_damage_for_hit(hit_count: int) -> float:
             hit_skill_attack = skill_attack * canned_attack_multiplier(hit_count)
-            base_physical = max(hit_skill_attack - enemy_armor, hit_skill_attack * 0.05) * (1 - enemy_reduce/100)
+            armor = current_armor_for_hit(hit_count)
+            base_physical = max(hit_skill_attack - armor, hit_skill_attack * 0.05) * (1 - enemy_reduce/100)
             damage_mult = (
                 (1 + phy_vuln / 100)
                 * (1 + phy_fragile / 100)
@@ -877,12 +1151,7 @@ def calculate_attack(*args):
                     hit_count = row * 4 + col + 1
                     if hit_count <= 1000:
                         # 计算当前攻击的敌方防御值
-                        if hit_count <= 15:
-                            # 前15次：防御+2900递减到+100，每次减少200
-                            current_armor = enemy_armor + (2900 - (hit_count - 1) * 200)
-                        else:
-                            # 第16次及以后：正常防御
-                            current_armor = enemy_armor
+                        current_armor = current_armor_for_hit(hit_count)
                           # 计算当前攻击的伤害
                         hit_skill_attack = skill_attack * canned_attack_multiplier(hit_count)
                         current_physical_damage = max(hit_skill_attack - current_armor, hit_skill_attack * 0.05) * (1 - enemy_reduce/100) * (1 + fragile / 100) * (1 + phy_vuln / 100)
@@ -1117,6 +1386,8 @@ skill_var.trace_add('write', calculate_attack)
 module_var.trace_add('write', calculate_attack)
 y_solo_var.trace_add('write', calculate_attack)
 gd_var.trace_add('write', calculate_attack)
+ys_nan_var.trace_add('write', calculate_attack)
+ys_fan_var.trace_add('write', calculate_attack)
 skill_level_var.trace_add('write', calculate_attack)
 
 # 添加底部署名
